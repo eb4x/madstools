@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <ctype.h>
 #include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -62,8 +61,6 @@ int main(int argc, char *argv[])
 
 	char filename[1024];
 	strncpy(filename, argv[optind], 1024);
-	//char *ch = strchr(filename, "."); *ch = "_";
-	//strlwr(filename);
 
 	FILE *fp = fopen(filename, "r");
 	if (fp == NULL) {

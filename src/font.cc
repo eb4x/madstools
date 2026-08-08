@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "util/util.h"
-
 uint16_t font(const uint8_t *unpacked, const size_t unpacked_size)
 {
 	struct font_header {
@@ -46,9 +44,6 @@ uint16_t font(const uint8_t *unpacked, const size_t unpacked_size)
 					(font_packed_character[(bytes_in_width * height) + byte] >> shift) & 0x03;
 			}
 		}
-
-//		snprintf(filename, 0x20, "image%03d.tga", i);
-//		tgaify(font_unpacked_character, font->width[i], font->max_height, filename);
 	}
 }
 
