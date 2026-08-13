@@ -99,43 +99,27 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (only_mp_header) {
-		printf("signature: %s\n", mp_header.signature);
-		printf("entries:   %d\n", mp_header.entries);
-		int offset = 0;
-		for (int i = 0; i < 16; ++i) {
-			if (i == mp_header.entries)
-				printf("====\n");
-
-			printf("  [%x]: %8s %2x (%8x/%8x) : 0x%05x\n",
-				i,
-				mp_header.entry[i].flag.packed ? "packed" : "unpacked",
-				mp_header.entry[i].flag.type,
-				mp_header.entry[i].packed_size,
-				mp_header.entry[i].unpacked_size,
-				sizeof (struct madspack_header) + offset );
-
-			offset += mp_header.entry[i].packed_size;
-		}
-
-		return EXIT_SUCCESS;
-	}
+	/* the readable part of the signature; %s would print its SUB byte */
+	printf("signature: %.12s\n", mp_header.signature);
+	printf("entries:   %d\n", mp_header.entries);
 
 	struct data_container {
 		uint8_t *unpacked;
 		uint8_t *packed;
 	} dc[mp_header.entries];
 
-	uint16_t result; char dumpname[0x10];
-	printf("mp_header.entries == %d\n", mp_header.entries);
+	size_t offset = 0;
+	char dumpname[0x10];
 	for (int i = 0; i < mp_header.entries; ++i) {
-		assert(mp_header.entry[i].flag.packed == 0 ||
-		       mp_header.entry[i].flag.packed == 1 );
 
-		printf("fab[%d] packed_size: 0x%05x, unpacked_size: 0x%05x packed:%d type: ", i,
-			mp_header.entry[i].packed_size,
+		printf(
+			"  [%2d]: 0x%05lx %s %2x (%8x/%8x) ",
+			i, sizeof (struct madspack_header) + offset,
+			mp_header.entry[i].flag.packed ? "packed" : "unpacked",
+			mp_header.entry[i].flag.type,
 			mp_header.entry[i].unpacked_size,
-			mp_header.entry[i].flag.packed);
+			mp_header.entry[i].packed_size
+		);
 
 		switch (mp_header.entry[i].flag.type) {
 			case PIK: printf("pic\n"); break;
@@ -145,19 +129,19 @@ int main(int argc, char *argv[])
 			default: printf("unknown(%02x)\n", mp_header.entry[i].flag.type); break;
 		}
 
+		offset += mp_header.entry[i].packed_size;
+
+		if (only_mp_header)
+			continue;
+
 		dc[i].packed   = (uint8_t *) malloc(mp_header.entry[i].packed_size);
 		dc[i].unpacked = (uint8_t *) malloc(mp_header.entry[i].unpacked_size);
 
 		fread(dc[i].packed, mp_header.entry[i].packed_size, 1, fp);
 
 		if (mp_header.entry[i].flag.packed) {
-			printf("Unpacking entry[%d]", i);
-
-			printf("esi:%p, edi:%p\n", dc[i].packed, dc[i].unpacked);
-			result = unpack(dc[i].packed, dc[i].unpacked);
-			//assert(result == mp_header.entry[i].unpacked_size);
-
-			printf("...complete.\n");
+			uint16_t result = unpack(dc[i].packed, dc[i].unpacked);
+			assert(result == mp_header.entry[i].unpacked_size);
 		} else
 			memcpy(dc[i].unpacked, dc[i].packed, mp_header.entry[i].unpacked_size);
 
@@ -166,6 +150,9 @@ int main(int argc, char *argv[])
 		//snprintf(dumpname, 0x10, "fab%d.st1", i);
 		//dump(dc[i].unpacked, mp_header.entry[i].unpacked_size, dumpname);
 	}
+
+	if (only_mp_header)
+		return EXIT_SUCCESS;
 
 	switch (mp_header.entry[0].flag.type) {
 		case PIK: break;
