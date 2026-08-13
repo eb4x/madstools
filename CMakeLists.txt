@@ -18,7 +18,6 @@ add_executable(mpack
 	src/font.cc
 	src/sprite.cc
 	src/unpack.cc
-	src/util/dump.cc
 	src/util/tgaify.cc
 )
 target_compile_options(mpack PRIVATE -Wall -Wextra)

@@ -6,8 +6,6 @@
 #include <string.h>
 
 #include "mads.h"
-#include "util/util.h"
-
 
 int main(int argc, char *argv[])
 {
@@ -109,7 +107,6 @@ int main(int argc, char *argv[])
 	} dc[mp_header.entries];
 
 	size_t offset = 0;
-	char dumpname[0x10];
 	for (int i = 0; i < mp_header.entries; ++i) {
 
 		printf(
@@ -144,11 +141,6 @@ int main(int argc, char *argv[])
 			assert(result == mp_header.entry[i].unpacked_size);
 		} else
 			memcpy(dc[i].unpacked, dc[i].packed, mp_header.entry[i].unpacked_size);
-
-		snprintf(dumpname, 0x10, "fab%d.fab", i);
-		dump(dc[i].packed,   mp_header.entry[i].packed_size,   dumpname);
-		//snprintf(dumpname, 0x10, "fab%d.st1", i);
-		//dump(dc[i].unpacked, mp_header.entry[i].unpacked_size, dumpname);
 	}
 
 	if (only_mp_header)
@@ -166,9 +158,6 @@ int main(int argc, char *argv[])
 
 		default: break;
 	}
-
-/*	result = stage2(fab1_unpacked, hdr.fab[1].unpacked_size,
-	             fab3_unpacked, hdr.fab[3].unpacked_size, filename);*/
 
 	return EXIT_SUCCESS;
 }
