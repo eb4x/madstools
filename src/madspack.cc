@@ -7,70 +7,13 @@
 
 #include "mads.h"
 
-int main(int argc, char *argv[])
+static int unpack(const char *path, int header_only)
 {
-	const char *program = argv[0];
-	int only_mp_header = 0;
-
-	static struct option long_options[] = {
-		{ "mp_header", 0, 0, 'i' },
-		{ "help",     0, 0, 'h' },
-		{ "version", 0, 0, 'v' },
-		{ 0, 0, 0, 0 }
-	};
-
-	int c;
-	while ((c = getopt_long(argc, argv, "hiv", long_options, NULL)) != -1) {
-		switch (c) {
-			case 'h':
-				printf(
-					"Usage: %s <FILE.SS>\n"
-					"MADSPACK 2.0 image extracting tool\n"
-					"\n"
-					"Options:\n"
-					"      --help     display this help and exit\n"
-					"      --version  display version information and exit\n"
-					"\n"
-					"Report bugs to <madstools@slipsprogrammor.no>.\n", program);
-				return EXIT_SUCCESS;
-
-			case 'i':
-				only_mp_header = 1;
-				break;
-
-			case 'v':
-				printf(
-					"viceroy - MADSPACK 2.0 image extracting tool\n"
-					"Copyright (C) 2008 - 2009 Erik Berg\n"
-					"License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n"
-					"This is free software: you are free to change and redistribute it.\n"
-					"There is NO WARRANTY, to the extent permitted by law.\n");
-				return EXIT_SUCCESS;
-
-			case '?':
-				fprintf(stderr, "Try '%s --help' for more information.\n", program);
-				return EXIT_FAILURE;
-		}
-	}
-
-	if (optind >= argc) {
-		fprintf(stderr, "%s: no file given\n", program);
-		fprintf(stderr, "Try '%s --help' for more information.\n", program);
-		return EXIT_FAILURE;
-	}
-
-	const char *filename = argv[optind];
-
-	FILE *fp = fopen(filename, "r");
+	FILE *fp = fopen(path, "r");
 	if (fp == NULL) {
-		printf("Failed to open file <%s>\n", filename);
+		printf("Failed to open file <%s>\n", path);
 		return EXIT_FAILURE;
 	}
-
-	fseek(fp, 0, SEEK_END);
-	int size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-
 
 	struct madspack_header {
 		char signature[0x0e];
@@ -91,8 +34,7 @@ int main(int argc, char *argv[])
 	fread(&mp_header, sizeof (struct madspack_header), 1, fp);
 
 	static const char madspack_sig[] = "MADSPACK 2.0\x1a\x00";
-	int res = strncmp(madspack_sig, mp_header.signature, 0x0e);
-	if (res != 0) {
+	if (strncmp(madspack_sig, mp_header.signature, 0x0e) != 0) {
 		printf("MADSPACK Signature mismatch.\n");
 		fclose(fp);
 		return EXIT_FAILURE;
@@ -129,7 +71,7 @@ int main(int argc, char *argv[])
 
 		offset += mp_header.entry[i].packed_size;
 
-		if (only_mp_header)
+		if (header_only)
 			continue;
 
 		dc[i].packed   = (uint8_t *) malloc(mp_header.entry[i].packed_size);
@@ -144,14 +86,14 @@ int main(int argc, char *argv[])
 			memcpy(dc[i].unpacked, dc[i].packed, mp_header.entry[i].unpacked_size);
 	}
 
-	if (only_mp_header)
+	if (header_only)
 		return EXIT_SUCCESS;
 
 	switch (mp_header.entry[0].flag.type) {
 		case PIK: break;
 
 		case SS:  sprite(dc[1].unpacked, mp_header.entry[1].unpacked_size,
-		                 dc[3].unpacked, mp_header.entry[3].unpacked_size, filename); break;
+		                 dc[3].unpacked, mp_header.entry[3].unpacked_size, path); break;
 
 		case FF:  font(  dc[0].unpacked, mp_header.entry[0].unpacked_size); break;
 
@@ -161,4 +103,61 @@ int main(int argc, char *argv[])
 	}
 
 	return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[])
+{
+	const char *program = argv[0];
+	int header_only = 0;
+
+	static struct option long_options[] = {
+		{ "help",    0, 0, 'h' },
+		{ "header",  0, 0, 'i' },
+		{ "version", 0, 0, 'v' },
+		{ 0, 0, 0, 0 }
+	};
+
+	int c;
+	while ((c = getopt_long(argc, argv, "hiv", long_options, NULL)) != -1) {
+		switch (c) {
+			case 'h':
+				printf(
+					"Usage: %s <FILE.SS>\n"
+					"MADSPACK 2.0 image extracting tool\n"
+					"\n"
+					"Options:\n"
+					"      --help     display this help and exit\n"
+					"      --version  display version information and exit\n"
+					"\n"
+					"Report bugs to <madstools@slipsprogrammor.no>.\n", program);
+				return EXIT_SUCCESS;
+
+			case 'i':
+				header_only = 1;
+				break;
+
+			case 'v':
+				printf(
+					"viceroy - MADSPACK 2.0 image extracting tool\n"
+					"Copyright (C) 2008 - 2009 Erik Berg\n"
+					"License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n"
+					"This is free software: you are free to change and redistribute it.\n"
+					"There is NO WARRANTY, to the extent permitted by law.\n");
+				return EXIT_SUCCESS;
+
+			case '?':
+				fprintf(stderr, "Try '%s --help' for more information.\n", program);
+				return EXIT_FAILURE;
+		}
+	}
+
+	if (optind >= argc) {
+		fprintf(stderr, "%s: no file given\n", program);
+		fprintf(stderr, "Try '%s --help' for more information.\n", program);
+		return EXIT_FAILURE;
+	}
+
+	const char *filename = argv[optind];
+
+	return unpack(filename, header_only);
 }
