@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # mconcat: splits a MADSCONCAT 1.0 container into its members.
 add_executable(mconcat
 	src/madsconcat.cc
-	src/util/dump.cc
 )
 target_compile_options(mconcat PRIVATE -Wall -Wextra)
 
