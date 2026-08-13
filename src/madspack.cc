@@ -9,60 +9,61 @@
 
 int main(int argc, char *argv[])
 {
-	int c, optindex = 0;
+	const char *program = argv[0];
 	int only_mp_header = 0;
 
 	static struct option long_options[] = {
-		{ "mp_header", 0, &only_mp_header, 'i' },
+		{ "mp_header", 0, 0, 'i' },
 		{ "help",     0, 0, 'h' },
 		{ "version", 0, 0, 'v' },
 		{ 0, 0, 0, 0 }
 	};
 
-	c = getopt_long(argc, argv, "hiv", long_options, &optindex);
-	switch (c) {
-		case 'h':
-			printf(
-				"Usage: %s <FILE.SS>\n"
-				"MADSPACK 2.0 image extracting tool\n"
-				"\n"
-				"Options:\n"
-				"      --help     display this help and exit\n"
-				"      --version  display version information and exit\n"
-				"\n"
-				"Report bugs to <madstools@slipsprogrammor.no>.\n", argv[0]);
-			return EXIT_SUCCESS;
+	int c;
+	while ((c = getopt_long(argc, argv, "hiv", long_options, NULL)) != -1) {
+		switch (c) {
+			case 'h':
+				printf(
+					"Usage: %s <FILE.SS>\n"
+					"MADSPACK 2.0 image extracting tool\n"
+					"\n"
+					"Options:\n"
+					"      --help     display this help and exit\n"
+					"      --version  display version information and exit\n"
+					"\n"
+					"Report bugs to <madstools@slipsprogrammor.no>.\n", program);
+				return EXIT_SUCCESS;
 
-		case 'i': only_mp_header = 1;
-			break;
+			case 'i':
+				only_mp_header = 1;
+				break;
 
-		case 'v':
-			printf(
-				"viceroy - MADSPACK 2.0 image extracting tool\n"
-				"Copyright (C) 2008 - 2009 Erik Berg\n"
-				"License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n"
-				"This is free software: you are free to change and redistribute it.\n"
-				"There is NO WARRANTY, to the extent permitted by law.\n");
-			return EXIT_SUCCESS;
+			case 'v':
+				printf(
+					"viceroy - MADSPACK 2.0 image extracting tool\n"
+					"Copyright (C) 2008 - 2009 Erik Berg\n"
+					"License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n"
+					"This is free software: you are free to change and redistribute it.\n"
+					"There is NO WARRANTY, to the extent permitted by law.\n");
+				return EXIT_SUCCESS;
 
-		case '?':
-			fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
-			return EXIT_FAILURE;
-
+			case '?':
+				fprintf(stderr, "Try '%s --help' for more information.\n", program);
+				return EXIT_FAILURE;
+		}
 	}
-	
+
 	if (optind >= argc) {
-		fprintf(stderr, "Usage: %s <FILE.SS>\n", argv[0]);
-		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
+		fprintf(stderr, "%s: no file given\n", program);
+		fprintf(stderr, "Try '%s --help' for more information.\n", program);
 		return EXIT_FAILURE;
 	}
 
-	char filename[1024];
-	strncpy(filename, argv[optind], 1024);
+	const char *filename = argv[optind];
 
 	FILE *fp = fopen(filename, "r");
 	if (fp == NULL) {
-		printf("Failed to open file <%s>\n", argv[1]);
+		printf("Failed to open file <%s>\n", filename);
 		return EXIT_FAILURE;
 	}
 
@@ -150,7 +151,7 @@ int main(int argc, char *argv[])
 		case PIK: break;
 
 		case SS:  sprite(dc[1].unpacked, mp_header.entry[1].unpacked_size,
-		                 dc[3].unpacked, mp_header.entry[3].unpacked_size, argv[1]); break;
+		                 dc[3].unpacked, mp_header.entry[3].unpacked_size, filename); break;
 
 		case FF:  font(  dc[0].unpacked, mp_header.entry[0].unpacked_size); break;
 
@@ -161,4 +162,3 @@ int main(int argc, char *argv[])
 
 	return EXIT_SUCCESS;
 }
-
