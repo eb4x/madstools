@@ -12,6 +12,7 @@ void rle_decode(const uint8_t *input, const size_t input_size,
 
 int sprite(const struct mads_ss_header *header, const size_t header_size,
            const struct mads_sprite_record *series_table, const size_t table_size,
+           const uint8_t *palette, const size_t palette_size,
            const uint8_t *sprite_data, const size_t sprite_data_size, const char *fn)
 {
 	char filename[1024];
