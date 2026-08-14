@@ -5,18 +5,13 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # CXX_EXTENSIONS stays at its default (gnu++17): the code uses VLAs throughout.
 
-# mconcat: splits a MADSCONCAT 1.0 container into its members.
-add_executable(mconcat
-	src/madsconcat.cc
-)
-target_compile_options(mconcat PRIVATE -Wall -Wextra)
-
-# mpack: extracts images from a MADSPACK 2.0 archive.
-add_executable(mpack
-	src/madspack.cc
+# mads: reads a MADSCONCAT 1.0 container or a MADSPACK 2.0 archive
+add_executable(mads
 	src/font.cc
 	src/sprite.cc
 	src/unpack.cc
 	src/util/tgaify.cc
+	tools/cli.cc
 )
-target_compile_options(mpack PRIVATE -Wall -Wextra)
+target_include_directories(mads PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(mads PRIVATE -Wall -Wextra)
