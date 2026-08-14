@@ -192,10 +192,7 @@ static int unpack(const char *path, int header_only)
 	printf("signature: %.12s\n", mp_header.signature);
 	printf("entries:   %d\n", mp_header.entries);
 
-	struct data_container {
-		uint8_t *unpacked;
-		uint8_t *packed;
-	} dc[mp_header.entries];
+	uint8_t *unpacked[mp_header.entries];
 
 	size_t offset = 0;
 	for (int i = 0; i < mp_header.entries; ++i) {
@@ -222,16 +219,18 @@ static int unpack(const char *path, int header_only)
 		if (header_only)
 			continue;
 
-		dc[i].packed   = (uint8_t *) malloc(mp_header.entry[i].packed_size);
-		dc[i].unpacked = (uint8_t *) malloc(mp_header.entry[i].unpacked_size);
+		uint8_t *packed = (uint8_t *) malloc(mp_header.entry[i].packed_size);
+		unpacked[i]     = (uint8_t *) malloc(mp_header.entry[i].unpacked_size);
 
-		fread(dc[i].packed, mp_header.entry[i].packed_size, 1, fp);
+		fread(packed, mp_header.entry[i].packed_size, 1, fp);
 
 		if (mp_header.entry[i].flag.packed) {
-			uint16_t result = unpack(dc[i].packed, dc[i].unpacked);
+			uint16_t result = unpack(packed, unpacked[i]);
 			assert(result == mp_header.entry[i].unpacked_size);
 		} else
-			memcpy(dc[i].unpacked, dc[i].packed, mp_header.entry[i].unpacked_size);
+			memcpy(unpacked[i], packed, mp_header.entry[i].unpacked_size);
+
+		free(packed);
 	}
 
 	if (header_only)
@@ -240,14 +239,18 @@ static int unpack(const char *path, int header_only)
 	switch (mp_header.entry[0].flag.type) {
 		case PIK: break;
 
-		case SS:  sprite(dc[1].unpacked, mp_header.entry[1].unpacked_size,
-		                 dc[3].unpacked, mp_header.entry[3].unpacked_size, path); break;
+		case SS:  sprite(unpacked[1], mp_header.entry[1].unpacked_size,
+		                 unpacked[3], mp_header.entry[3].unpacked_size, path); break;
 
-		case FF:  font(  dc[0].unpacked, mp_header.entry[0].unpacked_size); break;
+		case FF:  font(  unpacked[0], mp_header.entry[0].unpacked_size); break;
 
 		case ANYTHING: break;
 
 		default: break;
+	}
+
+	for (int i = 0; i < mp_header.entries; ++i) {
+		free(unpacked[i]);
 	}
 
 	return EXIT_SUCCESS;
