@@ -79,20 +79,20 @@ static int split(const char *path, const char *extract_dir)
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		fprintf(stderr, "%s: cannot open: %s\n", path, strerror(errno));
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	struct stat st;
 	if (fstat(fd, &st) != 0) {
 		fprintf(stderr, "%s: cannot stat: %s\n", path, strerror(errno));
 		close(fd);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	if (st.st_size < (off_t) sizeof (struct madsconcat_header)) {
 		fprintf(stderr, "%s: shorter than a MADSCONCAT header\n", path);
 		close(fd);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	size_t size = st.st_size;
@@ -101,7 +101,7 @@ static int split(const char *path, const char *extract_dir)
 	close(fd);
 	if (map == MAP_FAILED) {
 		fprintf(stderr, "%s: cannot map: %s\n", path, strerror(errno));
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	struct madsconcat mc;
@@ -109,7 +109,7 @@ static int split(const char *path, const char *extract_dir)
 	if (error != 0) {
 		fprintf(stderr, "%s: %s\n", path, mads_strerror(error));
 		munmap((void *) map, size);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	printf("length: %d\n", mc.header->length);
@@ -128,7 +128,7 @@ static int split(const char *path, const char *extract_dir)
 		if (out == NULL) {
 			fprintf(stderr, "%s: cannot write: %s\n", outpath.c_str(), strerror(errno));
 			munmap((void *) map, size);
-			return EXIT_FAILURE;
+			return 1;
 		}
 
 		fwrite(map + file.offset, 1, file.size, out);
@@ -144,13 +144,13 @@ static int split(const char *path, const char *extract_dir)
 		if (failed) {
 			fprintf(stderr, "%s: cannot write: %s\n", outpath.c_str(), strerror(errno));
 			munmap((void *) map, size);
-			return EXIT_FAILURE;
+			return 1;
 		}
 	}
 
 	munmap((void *) map, size);
 
-	return EXIT_SUCCESS;
+	return 0;
 }
 
 static int picture(const struct mads_pik *pik, const uint8_t *palette,
@@ -351,7 +351,7 @@ static int unpack(const char *path, const char *extract_dir,
 			fprintf(stderr, "%s: member %d: %s\n",
 				path, mp.error_member, mads_strerror(error));
 		madspack_free(&mp);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	/* The stamp never decides: identify does. One that binds as
@@ -391,12 +391,12 @@ static int unpack(const char *path, const char *extract_dir,
 	if (view.error != 0) {
 		fprintf(stderr, "%s: %s\n", path, mads_strerror(view.error));
 		madspack_free(&mp);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	if (extract_dir == NULL) {
 		madspack_free(&mp);
-		return EXIT_SUCCESS;
+		return 0;
 	}
 
 	/* The images are named after the input, but land in the extract
@@ -425,7 +425,7 @@ static int unpack(const char *path, const char *extract_dir,
 			fprintf(stderr, "%s: no full palette member; "
 				"name one with --palette\n", path);
 			madspack_free(&mp);
-			return EXIT_FAILURE;
+			return 1;
 		}
 	}
 
@@ -450,7 +450,7 @@ static int unpack(const char *path, const char *extract_dir,
 
 	madspack_free(&mp);
 
-	return status == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+	return status;
 }
 
 int main(int argc, char *argv[])
@@ -472,7 +472,7 @@ int main(int argc, char *argv[])
 		switch (c) {
 			case 'h':
 				printf(
-					"Usage: %s [options] <FILE>\n"
+					"Usage: %s [options] <FILE>...\n"
 					"MADS archive inspection and extraction tool\n"
 					"\n"
 					"The file's signature picks the handler. The file is listed\n"
@@ -542,20 +542,33 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	const char *filename = argv[optind];
+	/* One bad file fails the run without stopping the rest. */
+	int failures = 0;
+	for (int i = optind; i < argc; ++i) {
+		const char *filename = argv[i];
 
-	int fmt = sniff(filename);
+		switch (sniff(filename)) {
+			case FORMAT_MADSCONCAT:
+				if (split(filename, extract_dir) != 0)
+					++failures;
+				break;
 
-	switch(fmt) {
-		case FORMAT_MADSCONCAT:
-			return split(filename, extract_dir);
-		case FORMAT_MADSPACK:
-			return unpack(filename, extract_dir,
-				palette_path != NULL ? fallback_palette : NULL);
-		case FORMAT_UNKNOWN:
-			fprintf(stderr, "%s: unrecognized signature\n", filename);
-			return EXIT_FAILURE;
-		case FORMAT_UNREADABLE:
-			return EXIT_FAILURE;
+			case FORMAT_MADSPACK:
+				if (unpack(filename, extract_dir,
+				           palette_path != NULL ? fallback_palette : NULL) != 0)
+					++failures;
+				break;
+
+			case FORMAT_UNKNOWN:
+				fprintf(stderr, "%s: unrecognized signature\n", filename);
+				++failures;
+				break;
+
+			case FORMAT_UNREADABLE:
+				++failures;
+				break;
+		}
 	}
+
+	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
