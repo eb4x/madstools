@@ -12,8 +12,6 @@
 
 #include "mads.h"
 
-static const char madspack_sig[] = "MADSPACK 2.0\x1a\x00";
-
 enum format { FORMAT_MADSCONCAT, FORMAT_MADSPACK, FORMAT_UNKNOWN,
               FORMAT_UNREADABLE };
 
@@ -40,8 +38,8 @@ static enum format sniff(const char *path)
 	    memcmp(signature, MADSCONCAT_SIG, sizeof (MADSCONCAT_SIG) - 1) == 0)
 		return FORMAT_MADSCONCAT;
 
-	if (size >= sizeof (madspack_sig) - 1 &&
-	    memcmp(signature, madspack_sig, sizeof (madspack_sig) - 1) == 0)
+	if (size >= sizeof (MADSPACK_SIG) - 1 &&
+	    memcmp(signature, MADSPACK_SIG, sizeof (MADSPACK_SIG) - 1) == 0)
 		return FORMAT_MADSPACK;
 
 	return FORMAT_UNKNOWN;
@@ -149,25 +147,13 @@ static int unpack(const char *path, int header_only)
 		return EXIT_FAILURE;
 	}
 
-	struct madspack_header {
-		char signature[0x0e];
-		uint16_t entries;
-		struct madspack_entry {
-			struct flags {
-				uint8_t packed;
-				uint8_t type;
-			} __attribute__ ((packed)) flag;
-			uint32_t unpacked_size;
-			uint32_t packed_size;
-		} __attribute__ ((packed)) entry[16];
-	} __attribute__ ((packed)) mp_header;
+	struct madspack_header mp_header;
 
 	enum { ANYTHING = 0, PIK = 2, SS = 4, FF = 7 };
 
-	assert(sizeof (struct madspack_header) == 0xb0);
 	fread(&mp_header, sizeof (struct madspack_header), 1, fp);
 
-	if (strncmp(madspack_sig, mp_header.signature, 0x0e) != 0) {
+	if (strncmp(MADSPACK_SIG, mp_header.signature, sizeof (mp_header.signature)) != 0) {
 		printf("MADSPACK Signature mismatch.\n");
 		fclose(fp);
 		return EXIT_FAILURE;
@@ -175,67 +161,67 @@ static int unpack(const char *path, int header_only)
 
 	/* the readable part of the signature; %s would print its SUB byte */
 	printf("signature: %.12s\n", mp_header.signature);
-	printf("entries:   %d\n", mp_header.entries);
+	printf("length: %d\n", mp_header.length);
 
-	uint8_t *unpacked[mp_header.entries];
+	uint8_t *decoded[MADSPACK_RECORDS] = { NULL };
 
 	size_t offset = 0;
-	for (int i = 0; i < mp_header.entries; ++i) {
+	for (int i = 0; i < mp_header.length; ++i) {
+		const struct madspack_record &member = mp_header.member[i];
 
 		printf(
 			"  [%2d]: 0x%05lx %s %2x (%8x/%8x) ",
 			i, sizeof (struct madspack_header) + offset,
-			mp_header.entry[i].flag.packed ? "packed" : "unpacked",
-			mp_header.entry[i].flag.type,
-			mp_header.entry[i].unpacked_size,
-			mp_header.entry[i].packed_size
+			member.codec ? "fab" : "raw",
+			member.stamp,
+			member.decoded_size,
+			member.encoded_size
 		);
 
-		switch (mp_header.entry[i].flag.type) {
+		switch (member.stamp) {
 			case PIK: printf("pic\n"); break;
 			case SS:  printf("sprite\n"); break;
 			case FF:  printf("font\n"); break;
-			case ANYTHING: printf("anything\n"); break;
-			default: printf("unknown(%02x)\n", mp_header.entry[i].flag.type); break;
+			default: printf("unknown\n"); break;
 		}
 
-		offset += mp_header.entry[i].packed_size;
+		offset += member.encoded_size;
 
 		if (header_only)
 			continue;
 
-		uint8_t *packed = (uint8_t *) malloc(mp_header.entry[i].packed_size);
-		unpacked[i]     = (uint8_t *) malloc(mp_header.entry[i].unpacked_size);
+		uint8_t *encoded = (uint8_t *) malloc(member.encoded_size);
+		decoded[i]       = (uint8_t *) malloc(member.decoded_size);
 
-		fread(packed, mp_header.entry[i].packed_size, 1, fp);
+		fread(encoded, member.encoded_size, 1, fp);
 
-		if (mp_header.entry[i].flag.packed) {
-			uint16_t result = unpack(packed, unpacked[i]);
-			assert(result == mp_header.entry[i].unpacked_size);
+		if (member.codec) {
+			uint16_t result = unpack(encoded, decoded[i]);
+			assert(result == member.decoded_size);
 		} else
-			memcpy(unpacked[i], packed, mp_header.entry[i].unpacked_size);
+			memcpy(decoded[i], encoded, member.decoded_size);
 
-		free(packed);
+		free(encoded);
 	}
 
 	if (header_only)
 		return EXIT_SUCCESS;
 
-	switch (mp_header.entry[0].flag.type) {
+	switch (mp_header.member[0].stamp) {
 		case PIK: break;
 
-		case SS:  sprite(unpacked[1], mp_header.entry[1].unpacked_size,
-		                 unpacked[3], mp_header.entry[3].unpacked_size, path); break;
+		case SS:  sprite(decoded[1], mp_header.member[1].decoded_size,
+		                 decoded[3], mp_header.member[3].decoded_size, path); break;
 
-		case FF:  font(  unpacked[0], mp_header.entry[0].unpacked_size); break;
+		case FF:  font(  decoded[0], mp_header.member[0].decoded_size); break;
 
 		case ANYTHING: break;
 
 		default: break;
 	}
 
-	for (int i = 0; i < mp_header.entries; ++i) {
-		free(unpacked[i]);
+	for (int i = 0; i < mp_header.length; ++i) {
+		free(decoded[i]);
 	}
 
 	return EXIT_SUCCESS;

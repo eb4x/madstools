@@ -28,6 +28,29 @@ struct madsconcat_record {
 static_assert(sizeof (struct madsconcat_record) == 0x16,
               "MADSCONCAT record must be 0x16 bytes");
 
+#define MADSPACK_SIG "MADSPACK 2.0\x1a\x00"
+
+/* rows the table always holds on disk; header.length says how many
+   of them an archive uses */
+#define MADSPACK_RECORDS 16
+
+struct madspack_record {
+	uint8_t  codec;   /* 0 = raw;
+	                     1 = FAB stream (or raw w/o the FAB magic) */
+	uint8_t  stamp;
+	uint32_t decoded_size;
+	uint32_t encoded_size;
+} __attribute__ ((packed));
+
+struct madspack_header {
+	char signature[0x0e];
+	uint16_t length;
+	struct madspack_record member[MADSPACK_RECORDS];
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct madspack_header) == 0xb0,
+              "MADSPACK header must be 0xb0 bytes");
+
 uint16_t unpack(const uint8_t *compressed, uint8_t *uncompressed);
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
 uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
