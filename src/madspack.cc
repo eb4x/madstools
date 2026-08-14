@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -6,6 +7,36 @@
 #include <string.h>
 
 #include "mads.h"
+
+static const char madspack_sig[] = "MADSPACK 2.0\x1a\x00";
+
+enum format { FORMAT_MADSPACK, FORMAT_UNKNOWN, FORMAT_UNREADABLE };
+
+static enum format sniff(const char *path)
+{
+	char signature[0x10];
+
+	FILE *fp = fopen(path, "rb");
+	if (fp == NULL) {
+		fprintf(stderr, "%s: cannot open: %s\n", path, strerror(errno));
+		return FORMAT_UNREADABLE;
+	}
+
+	size_t size = fread(signature, 1, sizeof (signature), fp);
+
+	if (ferror(fp)) {
+		fprintf(stderr, "%s: cannot read: %s\n", path, strerror(errno));
+		fclose(fp);
+		return FORMAT_UNREADABLE;
+	}
+	fclose(fp);
+
+	if (size >= sizeof (madspack_sig) - 1 &&
+	    memcmp(signature, madspack_sig, sizeof (madspack_sig) - 1) == 0)
+		return FORMAT_MADSPACK;
+
+	return FORMAT_UNKNOWN;
+}
 
 static int unpack(const char *path, int header_only)
 {
@@ -33,7 +64,6 @@ static int unpack(const char *path, int header_only)
 	assert(sizeof (struct madspack_header) == 0xb0);
 	fread(&mp_header, sizeof (struct madspack_header), 1, fp);
 
-	static const char madspack_sig[] = "MADSPACK 2.0\x1a\x00";
 	if (strncmp(madspack_sig, mp_header.signature, 0x0e) != 0) {
 		printf("MADSPACK Signature mismatch.\n");
 		fclose(fp);
@@ -159,5 +189,15 @@ int main(int argc, char *argv[])
 
 	const char *filename = argv[optind];
 
-	return unpack(filename, header_only);
+	int fmt = sniff(filename);
+
+	switch(fmt) {
+		case FORMAT_MADSPACK:
+			return unpack(filename, header_only);
+		case FORMAT_UNKNOWN:
+			fprintf(stderr, "%s: unrecognized signature\n", filename);
+			return EXIT_FAILURE;
+		case FORMAT_UNREADABLE:
+			return EXIT_FAILURE;
+	}
 }
