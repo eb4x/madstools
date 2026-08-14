@@ -186,11 +186,15 @@ static int unpack(const char *path, int header_only)
 		return EXIT_SUCCESS;
 	}
 
+	int status = 0;
+
 	switch (mp.header.member[0].stamp) {
 		case PIK: break;
 
-		case SS:  sprite(mp.decoded[1], mp.header.member[1].decoded_size,
-		                 mp.decoded[3], mp.header.member[3].decoded_size, path); break;
+		case SS:  status = sprite((const struct mads_ss_header *) mp.decoded[0],
+		                          mp.header.member[0].decoded_size,
+		                          mp.decoded[1], mp.header.member[1].decoded_size,
+		                          mp.decoded[3], mp.header.member[3].decoded_size, path); break;
 
 		case FF:  font(  mp.decoded[0], mp.header.member[0].decoded_size); break;
 
@@ -200,7 +204,8 @@ static int unpack(const char *path, int header_only)
 	}
 
 	madspack_free(&mp);
-	return EXIT_SUCCESS;
+
+	return status == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 int main(int argc, char *argv[])

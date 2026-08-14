@@ -4,13 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mads.h"
 #include "util/util.h"
 
 void rle_decode(const uint8_t *input, const size_t input_size,
                 const size_t width, const size_t height, uint8_t *output);
 
-uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
-                const uint8_t *sprite_data, const size_t sprite_data_size, const char *fn)
+int sprite(const struct mads_ss_header *header, const size_t header_size,
+           const uint8_t *index_data,  const size_t index_data_size,
+           const uint8_t *sprite_data, const size_t sprite_data_size, const char *fn)
 {
 	struct index_entry_t {
 		uint16_t img_offset;
@@ -25,11 +27,20 @@ uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
 
 	char filename[1024];
 
-	int index_entries = index_data_size / sizeof (struct index_entry_t);
+	/* madspack_load() leaves a zero-sized member's decoded slot NULL. */
+	if (header == NULL || header_size < sizeof (struct mads_ss_header)) {
+		fprintf(stderr, "Missing or short sprite header in <%s>\n", fn);
+		return 1;
+	}
 
-	printf("index_entries: %d (%d / %d)\n", index_entries, index_data_size, sizeof (struct index_entry_t));
+	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
+		header->sprite_table_length, header->sprites_size);
 
-	for (int i = 0; i < index_entries; ++i) {
+	uint32_t sprites_size = 0;
+
+	for (int i = 0; i < header->sprite_table_length; ++i) {
+		sprites_size += index_entry[i].img_size;
+
 		size_t unpacked = index_entry[i].img_width * index_entry[i].img_height;
 
 		uint8_t image[unpacked];
@@ -47,6 +58,8 @@ uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
 		snprintf(filename, 1024, "%s.%02d.tga", fn, i);
 		tgaify(image, index_entry[i].img_width, index_entry[i].img_height, filename);
 	}
+
+	assert(header->sprites_size == sprites_size);
 
 	return 0;
 }

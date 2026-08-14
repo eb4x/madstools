@@ -81,9 +81,20 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
                   const uint8_t *src, uint32_t src_size);
 uint32_t mads_fab_encode_bound(uint32_t src_size);
 
+struct mads_ss_header {
+	uint8_t  unk00[0x26];
+	uint16_t sprite_table_length;
+	uint8_t  unk28[0x6c];
+	uint32_t sprites_size;
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_ss_header) == 0x98,
+              "SS series header must be 0x98 bytes");
+
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
-uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
-                const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
+int sprite(const struct mads_ss_header *header, const size_t header_size,
+           const uint8_t *index_data,  const size_t index_data_size,
+           const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
 
 /* Failure codes; 0 is success. */
 enum {
