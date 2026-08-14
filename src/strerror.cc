@@ -20,6 +20,11 @@ const char *mads_strerror(int error)
 		case MADS_RLE_OVERFLOW:     return "output too small for the RLE stream";
 		case MADS_RLE_CORRUPT:      return "RLE run crosses a row end";
 
+		case MADS_SS_LAYOUT:        return "not a sprite series archive";
+		case MADS_SS_HEADER:        return "sprite table contradicts the series header";
+		case MADS_SS_RECORD:        return "sprite record outside the stream member";
+		case MADS_SS_PALETTE:       return "palette member holds a component above 0x3f";
+
 		case MADS_NOMEM:            return "out of memory";
 	}
 

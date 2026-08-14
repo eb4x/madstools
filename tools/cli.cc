@@ -9,7 +9,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <format>
+#include <string>
+
 #include "mads.h"
+#include "util/util.h"
 
 enum format { FORMAT_MADSCONCAT, FORMAT_MADSPACK, FORMAT_UNKNOWN,
               FORMAT_UNREADABLE };
@@ -138,6 +142,49 @@ static int split(const char *path, int header_only)
 	return EXIT_SUCCESS;
 }
 
+static int sprite(const struct mads_ss *ss, const char *path)
+{
+	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
+		ss->header->sprite_table_length, ss->header->sprites_size);
+
+	for (uint16_t i = 0; i < ss->length; ++i) {
+		const struct mads_sprite_record &sprite = ss->sprite_table[i];
+
+		size_t pixels_size = (size_t) sprite.width * sprite.height;
+
+		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d\n", path, i,
+			sprite.offset, sprite.size, pixels_size,
+			sprite.width,  sprite.height);
+
+		/* a zero-area sprite is a placeholder; nothing to decode,
+		   and malloc(0) may return the NULL the error path reads
+		   as out of memory */
+		if (pixels_size == 0)
+			continue;
+
+		uint8_t *pixels = (uint8_t *) malloc(pixels_size);
+		if (pixels == NULL) {
+			fprintf(stderr, "%s: sprite %d: %s\n", path, i,
+				mads_strerror(MADS_NOMEM));
+			return 1;
+		}
+
+		int error = mads_rle_decode(pixels, sprite.width, sprite.height,
+		                            ss->streams + sprite.offset, sprite.size);
+		if (error != 0) {
+			fprintf(stderr, "%s: sprite %d: %s\n", path, i, mads_strerror(error));
+			free(pixels);
+			return 1;
+		}
+
+		std::string filename = std::format("{}.{:02}.tga", path, i);
+		tgaify(pixels, sprite.width, sprite.height, filename.c_str());
+		free(pixels);
+	}
+
+	return 0;
+}
+
 static int unpack(const char *path, int header_only)
 {
 	enum { ANYTHING = 0, PIK = 2, SS = 4, FF = 7 };
@@ -191,12 +238,17 @@ static int unpack(const char *path, int header_only)
 	switch (mp.header.member[0].stamp) {
 		case PIK: break;
 
-		case SS:  status = sprite((const struct mads_ss_header *) mp.decoded[0],
-		                          mp.header.member[0].decoded_size,
-		                          (const struct mads_sprite_record *) mp.decoded[1],
-		                          mp.header.member[1].decoded_size,
-		                          mp.decoded[2], mp.header.member[2].decoded_size,
-		                          mp.decoded[3], mp.header.member[3].decoded_size, path); break;
+		case SS: {
+			struct mads_ss ss;
+			error = mads_ss_bind(&ss, &mp);
+			if (error != 0) {
+				fprintf(stderr, "%s in <%s>\n", mads_strerror(error), path);
+				status = 1;
+			} else {
+				status = sprite(&ss, path);
+			}
+			break;
+		}
 
 		case FF:  font(  mp.decoded[0], mp.header.member[0].decoded_size); break;
 

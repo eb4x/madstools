@@ -90,6 +90,9 @@ int mads_rle_encode(uint8_t *dest, uint32_t *dest_size,
                     const uint8_t *src, size_t width, size_t height);
 uint32_t mads_rle_encode_bound(size_t width, size_t height);
 
+/* the full palette form: 256 six-bit RGB triples */
+#define MADS_PALETTE_SIZE 768
+
 struct mads_ss_header {
 	uint8_t  unk00[0x26];
 	uint16_t sprite_table_length;
@@ -112,11 +115,24 @@ struct mads_sprite_record {
 static_assert(sizeof (struct mads_sprite_record) == 16,
               "sprite record must be 16 bytes");
 
+struct mads_ss {
+	const struct mads_ss_header *header;
+
+	uint16_t length;
+	const struct mads_sprite_record *sprite_table;  /* length records */
+
+	const uint8_t *palette;
+	uint32_t       palette_size;
+
+	/* one RLE stream per sprite, the records' offsets indexing it --
+	   encoded bytes, not a raster */
+	const uint8_t *streams;
+	uint32_t       streams_size;
+};
+
+int mads_ss_bind(struct mads_ss *ss, const struct madspack *mp);
+
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
-int sprite(const struct mads_ss_header *header, const size_t header_size,
-           const struct mads_sprite_record *series_table, const size_t table_size,
-           const uint8_t *palette, const size_t palette_size,
-           const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
 
 /* Failure codes; 0 is success. */
 enum {
@@ -136,6 +152,11 @@ enum {
 	MADS_RLE_TRUNCATED,    /* src ran out before the last row ended */
 	MADS_RLE_OVERFLOW,     /* dest too small */
 	MADS_RLE_CORRUPT,      /* a run crosses the row end */
+
+	MADS_SS_LAYOUT,        /* not an SS archive, or a member is missing */
+	MADS_SS_HEADER,        /* sprite table contradicts the series header */
+	MADS_SS_RECORD,        /* sprite record outside the stream member */
+	MADS_SS_PALETTE,       /* palette component above 0x3f */
 
 	MADS_NOMEM,            /* out of memory */
 };
