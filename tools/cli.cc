@@ -178,8 +178,12 @@ static int sprite(const struct mads_ss *ss, const char *path)
 		}
 
 		std::string filename = std::format("{}.{:02}.tga", path, i);
-		tgaify(pixels, sprite.width, sprite.height, filename.c_str());
+		error = tgaify(pixels, sprite.width, sprite.height,
+		               ss->palette, filename.c_str());
 		free(pixels);
+
+		if (error != 0)
+			return 1;
 	}
 
 	return 0;
@@ -239,9 +243,20 @@ static int font(const struct mads_ff *ff, const char *path)
 		}
 	}
 
+	/* The sheet holds coverage, not palette indices: a glyph pixel is
+	   two bits scaled to 0, 85, 170 or 255. A gray ramp writes it out
+	   as it stands -- i / 4 is the six-bit gray whose eight-bit
+	   expansion is i again at all four levels. */
+	uint8_t ramp[MADS_PALETTE_SIZE];
+	for (int i = 0; i < 256; ++i)
+		ramp[i * 3 + 0] = ramp[i * 3 + 1] = ramp[i * 3 + 2] = i / 4;
+
 	std::string filename = std::format("{}.tga", path);
-	tgaify(sheet, sheet_width, sheet_height, filename.c_str());
+	int error = tgaify(sheet, sheet_width, sheet_height, ramp, filename.c_str());
 	free(sheet);
+
+	if (error != 0)
+		return 1;
 
 	return 0;
 }
@@ -304,6 +319,9 @@ static int unpack(const char *path, int header_only)
 			error = mads_ss_bind(&ss, &mp);
 			if (error != 0) {
 				fprintf(stderr, "%s in <%s>\n", mads_strerror(error), path);
+				status = 1;
+			} else if (ss.palette_size != MADS_PALETTE_SIZE) {
+				fprintf(stderr, "%s: no full palette member\n", path);
 				status = 1;
 			} else {
 				status = sprite(&ss, path);

@@ -1,26 +1,47 @@
+#include <errno.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
-void tgaify(const uint8_t *data, const size_t img_w, const size_t img_h, const char *filename)
+#include "util.h"
+
+/*
+ * Colormapped TGA writer. data is one byte per pixel and palette is
+ * 256 six-bit RGB triples -- the archive's own palette member, whose
+ * register mapping is the identity: triple N colors pixel value N.
+ */
+
+/* A six-bit VGA component in eight bits: DOSBox's rgb6_to_8. The
+   multiply and shift deliver round(c * 255 / 63) over the whole
+   six-bit range without a division. */
+static uint8_t rgb6_to_8(const uint8_t c)
 {
+	return (c * 259 + 33) >> 6;
+}
+
+int tgaify(const uint8_t *data, const size_t width, const size_t height,
+           const uint8_t *palette, const char *filename)
+{
+	/* The header holds the extents in sixteen bits while the pixels
+	   below are written from the arguments, so a larger image would
+	   describe itself wrongly and still write every byte. */
+	if (width > 0xffff || height > 0xffff) {
+		fprintf(stderr, "%s: %zux%zu is larger than a TGA header describes\n",
+			filename, width, height);
+		return 1;
+	}
+
 	struct rgb {
 		uint8_t b, g, r;
 	} __attribute__ ((packed));
 
-	FILE *fp;
-	fp = fopen("VICEROY.PAL", "r");
-	if (fp == NULL) {
-		fprintf(stderr, "Failed to read VICEROY.PAL\n");
-		return;
-	}
-
-	struct rgb palette[256];
+	struct rgb color_map[256];
 	for (int i = 0; i < 256; ++i) {
-		fread(&palette[i].r, 1, 1, fp); palette[i].r *= 4;
-		fread(&palette[i].g, 1, 1, fp); palette[i].g *= 4;
-		fread(&palette[i].b, 1, 1, fp); palette[i].b *= 4;
+		color_map[i].r = rgb6_to_8(palette[i * 3 + 0]);
+		color_map[i].g = rgb6_to_8(palette[i * 3 + 1]);
+		color_map[i].b = rgb6_to_8(palette[i * 3 + 2]);
 	}
-	fclose(fp);
 
 	struct tga_hdr {
 		uint8_t id_length;
@@ -45,23 +66,39 @@ void tgaify(const uint8_t *data, const size_t img_w, const size_t img_h, const c
 	tga.color_map_type = 1; /* yes we have a palette */
 	tga.image_type = 1;     /* uncompressed colormapped image. */
 
-	tga.cms.first_entry_index = sizeof (struct tga_hdr);
+	tga.cms.first_entry_index = 0;
 	tga.cms.color_map_length = 256;
 	tga.cms.color_map_entry_size = 24; /* in bits */
 
 	tga.is.x_origin = 0;
 	tga.is.y_origin = 0;
-	tga.is.image_width = img_w;
-	tga.is.image_height = img_h;
+	tga.is.image_width = width;
+	tga.is.image_height = height;
 	tga.is.pixel_depth = 8;
-	tga.is.image_descriptor = 0 + 0x20; /* flip image*/
+	tga.is.image_descriptor = 0 + 0x20; /* top-left origin: rows top-down, as data is */
 
-	fopen(filename, "w");
+	FILE *fp = fopen(filename, "wb");
+	if (fp == NULL) {
+		fprintf(stderr, "%s: cannot write: %s\n", filename, strerror(errno));
+		return 1;
+	}
 
-	fwrite(&tga,     sizeof(struct tga_hdr),   1, fp);
-	fwrite(&palette, sizeof(struct rgb),     256, fp);
+	fwrite(&tga,      sizeof (struct tga_hdr),   1, fp);
+	fwrite(color_map, sizeof (struct rgb),     256, fp);
+	fwrite(data, width, height, fp);
 
-	fwrite(data, img_w, img_h, fp);
-	fclose(fp);
+	/* A write that fails while flushing a full buffer leaves fclose
+	   nothing to flush; read the error flag while the stream still
+	   exists. */
+	int failed = ferror(fp);
 
+	if (fclose(fp) != 0)
+		failed = 1;
+
+	if (failed) {
+		fprintf(stderr, "%s: cannot write: %s\n", filename, strerror(errno));
+		return 1;
+	}
+
+	return 0;
 }
