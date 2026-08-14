@@ -132,6 +132,16 @@ struct mads_ss {
 
 int mads_ss_bind(struct mads_ss *ss, const struct madspack *mp);
 
+struct mads_ff_header {
+	uint8_t  cell_height;       /* every glyph is this tall */
+	uint8_t  max_width;         /* no glyph is wider */
+	uint8_t  width[128];
+	uint16_t offset[128];
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_ff_header) == 0x182,
+              "FF header must be 0x182 bytes");
+
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
 
 /* Failure codes; 0 is success. */
