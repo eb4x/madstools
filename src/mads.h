@@ -51,6 +51,17 @@ struct madspack_header {
 static_assert(sizeof (struct madspack_header) == 0xb0,
               "MADSPACK header must be 0xb0 bytes");
 
+struct madspack {
+	struct madspack_header header;
+
+	uint8_t *decoded[MADSPACK_RECORDS];
+
+	int error_member;  /* failing member, or -1 for the file itself */
+};
+
+int madspack_load(struct madspack *mp, const char *path);
+void madspack_free(struct madspack *mp);
+
 /*
  * FAB stream codec (src/lzss_fab.cc). Arguments follow zlib: the
  * destination comes first, dest_size carries the capacity of dest in
@@ -76,13 +87,20 @@ uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
 
 /* Failure codes; 0 is success. */
 enum {
-	MADS_FAB_TRUNCATED = 1, /* src ran out */
-	MADS_FAB_NOT_FAB,       /* no "FAB" magic */
-	MADS_FAB_BAD_DISTANCE,  /* distance bits not 0x0a..0x0d */
-	MADS_FAB_OVERFLOW,      /* dest too small */
-	MADS_FAB_CORRUPT,       /* match before start of dest */
+	MADS_PACK_OPEN = 1,    /* cannot open */
+	MADS_PACK_SHORT,       /* file ends inside the header or a member */
+	MADS_PACK_SIGNATURE,   /* not a MADSPACK archive */
+	MADS_PACK_HEADER,      /* table length past MADSPACK_RECORDS */
+	MADS_PACK_CODEC,       /* codec id without a handler */
+	MADS_PACK_SIZE,        /* stream size contradicts the header */
 
-	MADS_NOMEM,             /* out of memory */
+	MADS_FAB_TRUNCATED,    /* src ran out */
+	MADS_FAB_NOT_FAB,      /* no "FAB" magic */
+	MADS_FAB_BAD_DISTANCE, /* distance bits not 0x0a..0x0d */
+	MADS_FAB_OVERFLOW,     /* dest too small */
+	MADS_FAB_CORRUPT,      /* match before start of dest */
+
+	MADS_NOMEM,            /* out of memory */
 };
 
 const char *mads_strerror(int error);

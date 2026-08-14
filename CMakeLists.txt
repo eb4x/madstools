@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(mads
 	src/font.cc
 	src/lzss_fab.cc
+	src/madspack.cc
 	src/sprite.cc
 	src/strerror.cc
 	src/util/tgaify.cc

@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -141,33 +140,27 @@ static int split(const char *path, int header_only)
 
 static int unpack(const char *path, int header_only)
 {
-	FILE *fp = fopen(path, "r");
-	if (fp == NULL) {
-		printf("Failed to open file <%s>\n", path);
-		return EXIT_FAILURE;
-	}
-
-	struct madspack_header mp_header;
-
 	enum { ANYTHING = 0, PIK = 2, SS = 4, FF = 7 };
 
-	fread(&mp_header, sizeof (struct madspack_header), 1, fp);
-
-	if (strncmp(MADSPACK_SIG, mp_header.signature, sizeof (mp_header.signature)) != 0) {
-		printf("MADSPACK Signature mismatch.\n");
-		fclose(fp);
+	struct madspack mp;
+	int error = madspack_load(&mp, path);
+	if (error != 0) {
+		if (mp.error_member < 0)
+			fprintf(stderr, "%s: %s\n", path, mads_strerror(error));
+		else
+			fprintf(stderr, "%s: member %d: %s\n",
+				path, mp.error_member, mads_strerror(error));
+		madspack_free(&mp);
 		return EXIT_FAILURE;
 	}
 
 	/* the readable part of the signature; %s would print its SUB byte */
-	printf("signature: %.12s\n", mp_header.signature);
-	printf("length: %d\n", mp_header.length);
-
-	uint8_t *decoded[MADSPACK_RECORDS] = { NULL };
+	printf("signature: %.12s\n", mp.header.signature);
+	printf("length: %d\n", mp.header.length);
 
 	size_t offset = 0;
-	for (int i = 0; i < mp_header.length; ++i) {
-		const struct madspack_record &member = mp_header.member[i];
+	for (int i = 0; i < mp.header.length; ++i) {
+		const struct madspack_record &member = mp.header.member[i];
 
 		printf(
 			"  [%2d]: 0x%05lx %s %2x (%8x/%8x) ",
@@ -186,52 +179,27 @@ static int unpack(const char *path, int header_only)
 		}
 
 		offset += member.encoded_size;
-
-		if (header_only)
-			continue;
-
-		uint8_t *encoded = (uint8_t *) malloc(member.encoded_size);
-		decoded[i]       = (uint8_t *) malloc(member.decoded_size);
-
-		fread(encoded, member.encoded_size, 1, fp);
-
-		if (member.codec) {
-			uint32_t size = member.decoded_size;
-			int error = mads_fab_decode(decoded[i], &size,
-			                            encoded, member.encoded_size);
-			if (error != 0) {
-				fprintf(stderr, "%s: member %d: %s\n",
-					path, i, mads_strerror(error));
-				free(encoded);
-				return EXIT_FAILURE;
-			}
-			assert(size == member.decoded_size);
-		} else
-			memcpy(decoded[i], encoded, member.decoded_size);
-
-		free(encoded);
 	}
 
-	if (header_only)
+	if (header_only) {
+		madspack_free(&mp);
 		return EXIT_SUCCESS;
+	}
 
-	switch (mp_header.member[0].stamp) {
+	switch (mp.header.member[0].stamp) {
 		case PIK: break;
 
-		case SS:  sprite(decoded[1], mp_header.member[1].decoded_size,
-		                 decoded[3], mp_header.member[3].decoded_size, path); break;
+		case SS:  sprite(mp.decoded[1], mp.header.member[1].decoded_size,
+		                 mp.decoded[3], mp.header.member[3].decoded_size, path); break;
 
-		case FF:  font(  decoded[0], mp_header.member[0].decoded_size); break;
+		case FF:  font(  mp.decoded[0], mp.header.member[0].decoded_size); break;
 
 		case ANYTHING: break;
 
 		default: break;
 	}
 
-	for (int i = 0; i < mp_header.length; ++i) {
-		free(decoded[i]);
-	}
-
+	madspack_free(&mp);
 	return EXIT_SUCCESS;
 }
 
