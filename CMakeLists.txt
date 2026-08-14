@@ -3,7 +3,7 @@ project(madstools LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# CXX_EXTENSIONS stays at its default (gnu++17): the code uses VLAs throughout.
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # mads: reads a MADSCONCAT 1.0 container or a MADSPACK 2.0 archive
 add_executable(mads

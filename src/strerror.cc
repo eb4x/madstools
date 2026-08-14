@@ -25,6 +25,9 @@ const char *mads_strerror(int error)
 		case MADS_SS_RECORD:        return "sprite record outside the stream member";
 		case MADS_SS_PALETTE:       return "palette member holds a component above 0x3f";
 
+		case MADS_FF_LAYOUT:        return "not a font archive";
+		case MADS_FF_GLYPH:         return "glyph outside its cell or the member";
+
 		case MADS_NOMEM:            return "out of memory";
 	}
 

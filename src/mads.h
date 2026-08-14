@@ -142,7 +142,13 @@ struct mads_ff_header {
 static_assert(sizeof (struct mads_ff_header) == 0x182,
               "FF header must be 0x182 bytes");
 
-uint16_t font(const uint8_t *font_data, const size_t font_data_size);
+struct mads_ff {
+	const struct mads_ff_header *header;
+	const uint8_t *data;        /* the whole member; offset[] indexes it */
+	uint32_t       size;
+};
+
+int mads_ff_bind(struct mads_ff *ff, const struct madspack *mp);
 
 /* Failure codes; 0 is success. */
 enum {
@@ -167,6 +173,9 @@ enum {
 	MADS_SS_HEADER,        /* sprite table contradicts the series header */
 	MADS_SS_RECORD,        /* sprite record outside the stream member */
 	MADS_SS_PALETTE,       /* palette component above 0x3f */
+
+	MADS_FF_LAYOUT,        /* not a font archive */
+	MADS_FF_GLYPH,         /* glyph wider than its cell, or outside the member */
 
 	MADS_NOMEM,            /* out of memory */
 };

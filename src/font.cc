@@ -1,46 +1,48 @@
-#include <math.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "mads.h"
 
-uint16_t font(const uint8_t *unpacked, const size_t unpacked_size)
+/*
+ * Font binder. Binding validates every glyph up front -- the width
+ * against its cell, the bitmap against the member's end -- which is
+ * also what tells a font apart from the other single-member
+ * archives.
+ */
+
+int mads_ff_bind(struct mads_ff *ff, const struct madspack *mp)
 {
-	const struct mads_ff_header *font = (const struct mads_ff_header *) unpacked;
+	const struct madspack_record *member = mp->header.member;
 
-	printf("font: max_width: %d, cell_height: %d\n",
-		font->max_width, font->cell_height);
+	if (mp->header.length != 1)
+		return MADS_FF_LAYOUT;
 
-	char filename[0x20];
-	for (int i = 0; i < 128; ++i) {
+	if (member[0].decoded_size < sizeof (struct mads_ff_header) ||
+	    mp->decoded[0] == NULL)
+		return MADS_FF_LAYOUT;
 
-		if (font->width[i] == 0)
+	ff->header = (const struct mads_ff_header *) mp->decoded[0];
+	ff->data = mp->decoded[0];
+	ff->size = member[0].decoded_size;
+
+	if (ff->header->cell_height == 0 || ff->header->max_width == 0)
+		return MADS_FF_LAYOUT;
+
+	for (int g = 0; g < 128; ++g) {
+		uint32_t width = ff->header->width[g];
+
+		if (width == 0)
 			continue;
 
-		int bytes_in_width = (font->width[i] / 4) + (font->width[i] % 4 ? 1 : 0);
+		if (width > ff->header->max_width)
+			return MADS_FF_GLYPH;
 
-		printf("entry[%3d] (%c) width: %d:%d, offset: %04x\n",
-			i, (char) i + 1,
-			font->width[i], bytes_in_width,
-			font->offset[i]);
+		uint32_t bytes_in_width = (width + 3) / 4;  /* 2-bit pixels */
 
-		const uint8_t *font_packed_character = unpacked + font->offset[i];
-
-		uint8_t font_unpacked_character[font->width[i] * font->cell_height];
-		memset(font_unpacked_character, 0, sizeof(font_unpacked_character));
-
-		for (int height = 0; height < font->cell_height; ++height) {
-			for (int width = 0; width < font->width[i]; ++width) {
-
-				int byte = (width / 4);
-				int shift = 6 - (width % 4) * 2;
-
-				font_unpacked_character[width + (height * font->width[i])] =
-					(font_packed_character[(bytes_in_width * height) + byte] >> shift) & 0x03;
-			}
-		}
+		if (ff->header->offset[g] +
+		    bytes_in_width * ff->header->cell_height > ff->size)
+			return MADS_FF_GLYPH;
 	}
-}
 
+	return 0;
+}

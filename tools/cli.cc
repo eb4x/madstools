@@ -185,6 +185,67 @@ static int sprite(const struct mads_ss *ss, const char *path)
 	return 0;
 }
 
+static int font(const struct mads_ff *ff, const char *path)
+{
+	const struct mads_ff_header *header = ff->header;
+
+	printf("font: max_width: %d, cell_height: %d\n",
+		header->max_width, header->cell_height);
+
+	/* One cell per glyph, 16 columns by 8 rows, glyphs left-aligned. */
+	size_t sheet_width  = 16 * header->max_width;
+	size_t sheet_height =  8 * header->cell_height;
+
+	uint8_t *sheet = (uint8_t *) malloc(sheet_width * sheet_height);
+	if (sheet == NULL) {
+		fprintf(stderr, "%s: %s\n", path, mads_strerror(MADS_NOMEM));
+		return 1;
+	}
+	memset(sheet, 0, sheet_width * sheet_height);
+
+	for (int i = 0; i < 128; ++i) {
+
+		if (header->width[i] == 0)
+			continue;
+
+		int bytes_in_width = (header->width[i] + 3) / 4;
+
+		int character = i + 1;
+		if (character >= 0x20 && character <= 0x7e)
+			printf("glyph[%3d] (%c) width: %d:%d, offset: %04x\n",
+				i, character,
+				header->width[i], bytes_in_width,
+				header->offset[i]);
+		else
+			printf("glyph[%3d] %02x  width: %d:%d, offset: %04x\n",
+				i, character,
+				header->width[i], bytes_in_width,
+				header->offset[i]);
+
+		const uint8_t *packed = ff->data + header->offset[i];
+
+		size_t cell = (i % 16) * header->max_width
+		            + (i / 16) * header->cell_height * sheet_width;
+
+		for (int height = 0; height < header->cell_height; ++height) {
+			for (int width = 0; width < header->width[i]; ++width) {
+
+				int byte = (width / 4);
+				int shift = 6 - (width % 4) * 2;
+
+				sheet[cell + width + (height * sheet_width)] =
+					((packed[(bytes_in_width * height) + byte] >> shift) & 0x03) * 85;
+			}
+		}
+	}
+
+	std::string filename = std::format("{}.tga", path);
+	tgaify(sheet, sheet_width, sheet_height, filename.c_str());
+	free(sheet);
+
+	return 0;
+}
+
 static int unpack(const char *path, int header_only)
 {
 	enum { ANYTHING = 0, PIK = 2, SS = 4, FF = 7 };
@@ -250,7 +311,17 @@ static int unpack(const char *path, int header_only)
 			break;
 		}
 
-		case FF:  font(  mp.decoded[0], mp.header.member[0].decoded_size); break;
+		case FF: {
+			struct mads_ff ff;
+			error = mads_ff_bind(&ff, &mp);
+			if (error != 0) {
+				fprintf(stderr, "%s in <%s>\n", mads_strerror(error), path);
+				status = 1;
+			} else {
+				status = font(&ff, path);
+			}
+			break;
+		}
 
 		case ANYTHING: break;
 
