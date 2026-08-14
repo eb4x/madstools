@@ -11,14 +11,6 @@ extern "C" {
 
 #define MADSCONCAT_SIG "MADSCONCAT 1.0\x1a\x00"
 
-struct madsconcat_header {
-	char signature[0x10];
-	uint16_t length;
-} __attribute__ ((packed));
-
-static_assert(sizeof (struct madsconcat_header) == 0x12,
-              "MADSCONCAT header must be 0x12 bytes");
-
 struct madsconcat_record {
 	uint32_t offset;
 	uint32_t size;
@@ -27,6 +19,24 @@ struct madsconcat_record {
 
 static_assert(sizeof (struct madsconcat_record) == 0x16,
               "MADSCONCAT record must be 0x16 bytes");
+
+struct madsconcat_header {
+	char signature[0x10];
+	uint16_t length;
+	struct madsconcat_record file[];
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct madsconcat_header) == 0x12,
+              "MADSCONCAT header must be 0x12 bytes");
+
+struct madsconcat {
+	const struct madsconcat_header *header;
+
+	const uint8_t *data;    /* the whole container; offsets index it */
+	size_t         size;
+};
+
+int madsconcat_bind(struct madsconcat *mc, const uint8_t *data, size_t size);
 
 #define MADSPACK_SIG "MADSPACK 2.0\x1a\x00"
 
@@ -174,7 +184,12 @@ int mads_ff_bind(struct mads_ff *ff, const struct madspack *mp);
 
 /* Failure codes; 0 is success. */
 enum {
-	MADS_PACK_OPEN = 1,    /* cannot open */
+	MADS_CONCAT_SHORT = 1, /* container ends inside its header, table or a file */
+	MADS_CONCAT_SIGNATURE, /* not a MADSCONCAT container */
+	MADS_CONCAT_NAME,      /* member name empty, unterminated, or not a
+	                          printable bare filename */
+
+	MADS_PACK_OPEN,        /* cannot open */
 	MADS_PACK_SHORT,       /* file ends inside the header or a member */
 	MADS_PACK_SIGNATURE,   /* not a MADSPACK archive */
 	MADS_PACK_HEADER,      /* table length past MADSPACK_RECORDS */

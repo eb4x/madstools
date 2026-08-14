@@ -3,6 +3,10 @@
 const char *mads_strerror(int error)
 {
 	switch (error) {
+		case MADS_CONCAT_SHORT:     return "container ends inside its header, table or a file";
+		case MADS_CONCAT_SIGNATURE: return "not a MADSCONCAT container";
+		case MADS_CONCAT_NAME:      return "member name is not a bare filename";
+
 		case MADS_PACK_OPEN:      return "cannot open";
 		case MADS_PACK_SHORT:     return "file shorter than its header claims";
 		case MADS_PACK_SIGNATURE: return "not a MADSPACK archive";

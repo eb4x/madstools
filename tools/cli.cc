@@ -78,37 +78,20 @@ static int split(const char *path, int header_only)
 		return EXIT_FAILURE;
 	}
 
-	const struct madsconcat_header *header =
-		(const struct madsconcat_header *) map;
-
-	if (memcmp(MADSCONCAT_SIG, header->signature, sizeof (header->signature)) != 0) {
-		fprintf(stderr, "MADSCONCAT signature mismatch.\n");
+	struct madsconcat mc;
+	int error = madsconcat_bind(&mc, map, size);
+	if (error != 0) {
+		fprintf(stderr, "%s: %s\n", path, mads_strerror(error));
 		munmap((void *) map, size);
 		return EXIT_FAILURE;
 	}
 
-	printf("length: %d\n", header->length);
+	printf("length: %d\n", mc.header->length);
 
-	const struct madsconcat_record *file_table =
-		(const struct madsconcat_record *) (map + sizeof (struct madsconcat_header));
-
-	if (sizeof (struct madsconcat_header) +
-	    (size_t) header->length * sizeof (struct madsconcat_record) > size) {
-		fprintf(stderr, "<%s> ends inside its file table\n", path);
-		munmap((void *) map, size);
-		return EXIT_FAILURE;
-	}
-
-	for (int i = 0; i < header->length; ++i) {
-		const struct madsconcat_record &file = file_table[i];
+	for (int i = 0; i < mc.header->length; ++i) {
+		const struct madsconcat_record &file = mc.header->file[i];
 
 		printf("%s[%3d]: offset(%06x), size(%06x) - [%s]\n", path, i, file.offset, file.size, file.name);
-
-		if ((size_t) file.offset + file.size > size) {
-			fprintf(stderr, "<%s> ends inside member [%s]\n", path, file.name);
-			munmap((void *) map, size);
-			return EXIT_FAILURE;
-		}
 
 		if (header_only)
 			continue;
