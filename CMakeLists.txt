@@ -10,6 +10,7 @@ add_executable(mads
 	src/font.cc
 	src/lzss_fab.cc
 	src/sprite.cc
+	src/strerror.cc
 	src/util/tgaify.cc
 	tools/cli.cc
 )

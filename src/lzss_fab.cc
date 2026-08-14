@@ -93,12 +93,14 @@ int mads_fab_decode(uint8_t *dest, uint32_t *dest_size,
 {
 	uint32_t capacity = *dest_size;
 
-	if (src_size < 6 || memcmp(src, "FAB", 3))
-		return -1;
+	if (src_size < 6)
+		return MADS_FAB_TRUNCATED;
+	if (memcmp(src, "FAB", 3))
+		return MADS_FAB_NOT_FAB;
 
 	uint8_t distance_bits = src[3];
 	if (distance_bits < 0x0a || distance_bits > 0x0d)
-		return -1;
+		return MADS_FAB_BAD_DISTANCE;
 
 	uint32_t window = 1u << distance_bits;
 	int code_shift = 16 - distance_bits;
@@ -114,9 +116,9 @@ int mads_fab_decode(uint8_t *dest, uint32_t *dest_size,
 		if (get_bit(&br)) {
 			uint8_t literal = get_byte(&br);
 			if (br.truncated)
-				break;
+				return MADS_FAB_TRUNCATED;
 			if (written == capacity)
-				break;
+				return MADS_FAB_OVERFLOW;
 			dest[written++] = literal;
 			continue;
 		}
@@ -137,7 +139,7 @@ int mads_fab_decode(uint8_t *dest, uint32_t *dest_size,
 			} else {
 				uint8_t escape = get_byte(&br);
 				if (br.truncated)
-					break;
+					return MADS_FAB_TRUNCATED;
 				if (escape == 0) {
 					*dest_size = written;
 					return 0;
@@ -149,16 +151,14 @@ int mads_fab_decode(uint8_t *dest, uint32_t *dest_size,
 		}
 
 		if (br.truncated)
-			break;
+			return MADS_FAB_TRUNCATED;
 		if (distance > written)
-			break;
+			return MADS_FAB_CORRUPT;
 		if (length > capacity - written)
-			break;
+			return MADS_FAB_OVERFLOW;
 		for (; length; --length, ++written)
 			dest[written] = dest[written - distance];
 	}
-
-	return -1;
 }
 
 /*
@@ -315,7 +315,7 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
 	uint32_t length_direct = (1u << code_shift) - 1 + 2;
 
 	if (capacity < 6)
-		return -1;
+		return MADS_FAB_OVERFLOW;
 	memcpy(dest, "FAB", 3);
 	dest[3] = FAB_DISTANCE_BITS;
 
@@ -328,7 +328,7 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
 		put_escape(&bw, 0x00);
 		close_flags(&bw);
 		if (bw.overflow)
-			return -1;
+			return MADS_FAB_OVERFLOW;
 		*dest_size = bw.pos;
 		return 0;
 	}
@@ -341,7 +341,7 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
 		free(dict.ring);
 		free(dict.rson);
 		free(dict.dad);
-		return -1;
+		return MADS_NOMEM;
 	}
 	for (uint32_t i = 0; i < window + HASH_SIZE + 1; ++i)
 		dict.rson[i] = window;
@@ -422,7 +422,7 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
 	free(dict.dad);
 
 	if (bw.overflow)
-		return -1;
+		return MADS_FAB_OVERFLOW;
 	*dest_size = bw.pos;
 	return 0;
 }

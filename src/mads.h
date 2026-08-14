@@ -54,9 +54,9 @@ static_assert(sizeof (struct madspack_header) == 0xb0,
 /*
  * FAB stream codec (src/lzss_fab.cc). Arguments follow zlib: the
  * destination comes first, dest_size carries the capacity of dest in
- * and the delivered size out. Both return 0 or -1, leave dest_size
- * untouched on failure, and never read or write outside the given
- * buffers.
+ * and the delivered size out. Both return 0 or a MADS_ code, leave
+ * dest_size untouched on failure, and never read or write outside
+ * the given buffers.
  *
  * mads_fab_decode accepts streams with 10 to 13 distance bits.
  * mads_fab_encode writes the 12-bit form MADS uses, byte-identical to
@@ -73,6 +73,19 @@ uint32_t mads_fab_encode_bound(uint32_t src_size);
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
 uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
                 const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
+
+/* Failure codes; 0 is success. */
+enum {
+	MADS_FAB_TRUNCATED = 1, /* src ran out */
+	MADS_FAB_NOT_FAB,       /* no "FAB" magic */
+	MADS_FAB_BAD_DISTANCE,  /* distance bits not 0x0a..0x0d */
+	MADS_FAB_OVERFLOW,      /* dest too small */
+	MADS_FAB_CORRUPT,       /* match before start of dest */
+
+	MADS_NOMEM,             /* out of memory */
+};
+
+const char *mads_strerror(int error);
 
 #ifdef __cplusplus
 }
