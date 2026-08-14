@@ -11,20 +11,9 @@ void rle_decode(const uint8_t *input, const size_t input_size,
                 const size_t width, const size_t height, uint8_t *output);
 
 int sprite(const struct mads_ss_header *header, const size_t header_size,
-           const uint8_t *index_data,  const size_t index_data_size,
+           const struct mads_sprite_record *series_table, const size_t table_size,
            const uint8_t *sprite_data, const size_t sprite_data_size, const char *fn)
 {
-	struct index_entry_t {
-		uint16_t img_offset;
-		uint16_t unk00;
-		uint16_t img_size;
-		uint16_t unk01;
-		uint16_t unk02;
-		uint16_t unk03;
-		uint16_t img_width;
-		uint16_t img_height;
-	} *index_entry = (struct index_entry_t *) index_data;
-
 	char filename[1024];
 
 	/* madspack_load() leaves a zero-sized member's decoded slot NULL. */
@@ -39,24 +28,26 @@ int sprite(const struct mads_ss_header *header, const size_t header_size,
 	uint32_t sprites_size = 0;
 
 	for (int i = 0; i < header->sprite_table_length; ++i) {
-		sprites_size += index_entry[i].img_size;
+		const struct mads_sprite_record *sprite = &series_table[i];
 
-		size_t unpacked = index_entry[i].img_width * index_entry[i].img_height;
+		sprites_size += sprite->size;
+
+		size_t unpacked = sprite->width * sprite->height;
 
 		uint8_t image[unpacked];
 
 		printf("%s/image[%2d]: offset: 0x%04x, size: 0x%04x:%04x, %3dx%3d\n", fn, i,
-			index_entry[i].img_offset, index_entry[i].img_size, unpacked,
-			index_entry[i].img_width,  index_entry[i].img_height);
+			sprite->offset, sprite->size, unpacked,
+			sprite->width,  sprite->height);
 
 		memset(image, 0, unpacked);
 
-		rle_decode(sprite_data + index_entry[i].img_offset, index_entry[i].img_size,
-		                         index_entry[i].img_width,  index_entry[i].img_height,
+		rle_decode(sprite_data + sprite->offset, sprite->size,
+		                         sprite->width,  sprite->height,
 			image);
 
 		snprintf(filename, 1024, "%s.%02d.tga", fn, i);
-		tgaify(image, index_entry[i].img_width, index_entry[i].img_height, filename);
+		tgaify(image, sprite->width, sprite->height, filename);
 	}
 
 	assert(header->sprites_size == sprites_size);
@@ -64,6 +55,8 @@ int sprite(const struct mads_ss_header *header, const size_t header_size,
 	return 0;
 }
 
+/* Sentinels: 0xff ends a row, 0xfe introduces a run, 0xfd is
+   transparency. */
 void rle_decode(const uint8_t *input, const size_t input_size, const size_t width, const size_t height, uint8_t *output)
 {
 	int idx = 0;

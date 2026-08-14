@@ -91,9 +91,21 @@ struct mads_ss_header {
 static_assert(sizeof (struct mads_ss_header) == 0x98,
               "SS series header must be 0x98 bytes");
 
+struct mads_sprite_record {
+	uint32_t offset;
+	uint32_t size;
+	uint16_t unk08;
+	uint16_t unk0a;
+	uint16_t width;
+	uint16_t height;
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_sprite_record) == 16,
+              "sprite record must be 16 bytes");
+
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
 int sprite(const struct mads_ss_header *header, const size_t header_size,
-           const uint8_t *index_data,  const size_t index_data_size,
+           const struct mads_sprite_record *series_table, const size_t table_size,
            const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
 
 /* Failure codes; 0 is success. */

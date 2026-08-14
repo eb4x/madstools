@@ -193,7 +193,8 @@ static int unpack(const char *path, int header_only)
 
 		case SS:  status = sprite((const struct mads_ss_header *) mp.decoded[0],
 		                          mp.header.member[0].decoded_size,
-		                          mp.decoded[1], mp.header.member[1].decoded_size,
+		                          (const struct mads_sprite_record *) mp.decoded[1],
+		                          mp.header.member[1].decoded_size,
 		                          mp.decoded[3], mp.header.member[3].decoded_size, path); break;
 
 		case FF:  font(  mp.decoded[0], mp.header.member[0].decoded_size); break;
