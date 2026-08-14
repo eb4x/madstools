@@ -8,8 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # mads: reads a MADSCONCAT 1.0 container or a MADSPACK 2.0 archive
 add_executable(mads
 	src/font.cc
+	src/lzss_fab.cc
 	src/sprite.cc
-	src/unpack.cc
 	src/util/tgaify.cc
 	tools/cli.cc
 )

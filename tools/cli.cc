@@ -196,8 +196,11 @@ static int unpack(const char *path, int header_only)
 		fread(encoded, member.encoded_size, 1, fp);
 
 		if (member.codec) {
-			uint16_t result = unpack(encoded, decoded[i]);
-			assert(result == member.decoded_size);
+			uint32_t size = member.decoded_size;
+			int result = mads_fab_decode(decoded[i], &size,
+			                             encoded, member.encoded_size);
+			assert(result == 0);
+			assert(size == member.decoded_size);
 		} else
 			memcpy(decoded[i], encoded, member.decoded_size);
 

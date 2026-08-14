@@ -51,7 +51,25 @@ struct madspack_header {
 static_assert(sizeof (struct madspack_header) == 0xb0,
               "MADSPACK header must be 0xb0 bytes");
 
-uint16_t unpack(const uint8_t *compressed, uint8_t *uncompressed);
+/*
+ * FAB stream codec (src/lzss_fab.cc). Arguments follow zlib: the
+ * destination comes first, dest_size carries the capacity of dest in
+ * and the delivered size out. Both return 0 or -1, leave dest_size
+ * untouched on failure, and never read or write outside the given
+ * buffers.
+ *
+ * mads_fab_decode accepts streams with 10 to 13 distance bits.
+ * mads_fab_encode writes the 12-bit form MADS uses, byte-identical to
+ * the original packer's output, including the 4-byte header.
+ * mads_fab_encode_bound gives a dest capacity that is sufficient for
+ * any input, saturating at UINT32_MAX.
+ */
+int mads_fab_decode(uint8_t *dest, uint32_t *dest_size,
+                    const uint8_t *src, uint32_t src_size);
+int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
+                  const uint8_t *src, uint32_t src_size);
+uint32_t mads_fab_encode_bound(uint32_t src_size);
+
 uint16_t font(const uint8_t *font_data, const size_t font_data_size);
 uint16_t sprite(const uint8_t *index_data,  const size_t index_data_size,
                 const uint8_t *sprite_data, const size_t sprite_data_size, const char *filename);
