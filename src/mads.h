@@ -81,6 +81,15 @@ int mads_fab_encode(uint8_t *dest, uint32_t *dest_size,
                   const uint8_t *src, uint32_t src_size);
 uint32_t mads_fab_encode_bound(uint32_t src_size);
 
+/* the one pixel value the sprite RLE grammar cannot draw */
+#define MADS_RLE_TRANSPARENT 0xfd
+
+int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
+                    const uint8_t *src, uint32_t src_size);
+int mads_rle_encode(uint8_t *dest, uint32_t *dest_size,
+                    const uint8_t *src, size_t width, size_t height);
+uint32_t mads_rle_encode_bound(size_t width, size_t height);
+
 struct mads_ss_header {
 	uint8_t  unk00[0x26];
 	uint16_t sprite_table_length;
@@ -123,6 +132,10 @@ enum {
 	MADS_FAB_BAD_DISTANCE, /* distance bits not 0x0a..0x0d */
 	MADS_FAB_OVERFLOW,     /* dest too small */
 	MADS_FAB_CORRUPT,      /* match before start of dest */
+
+	MADS_RLE_TRUNCATED,    /* src ran out before the last row ended */
+	MADS_RLE_OVERFLOW,     /* dest too small */
+	MADS_RLE_CORRUPT,      /* a run crosses the row end */
 
 	MADS_NOMEM,            /* out of memory */
 };

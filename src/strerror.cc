@@ -16,6 +16,10 @@ const char *mads_strerror(int error)
 		case MADS_FAB_OVERFLOW:     return "output too small for the FAB stream";
 		case MADS_FAB_CORRUPT:      return "FAB stream corrupt";
 
+		case MADS_RLE_TRUNCATED:    return "RLE stream truncated";
+		case MADS_RLE_OVERFLOW:     return "output too small for the RLE stream";
+		case MADS_RLE_CORRUPT:      return "RLE run crosses a row end";
+
 		case MADS_NOMEM:            return "out of memory";
 	}
 
