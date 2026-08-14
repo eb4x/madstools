@@ -12,7 +12,6 @@
 
 #include "mads.h"
 
-static const char madsconcat_sig[] = "MADSCONCAT 1.0\x1a\x00";
 static const char madspack_sig[] = "MADSPACK 2.0\x1a\x00";
 
 enum format { FORMAT_MADSCONCAT, FORMAT_MADSPACK, FORMAT_UNKNOWN,
@@ -37,8 +36,8 @@ static enum format sniff(const char *path)
 	}
 	fclose(fp);
 
-	if (size >= sizeof (madsconcat_sig) - 1 &&
-	    memcmp(signature, madsconcat_sig, sizeof (madsconcat_sig) - 1) == 0)
+	if (size >= sizeof (MADSCONCAT_SIG) - 1 &&
+	    memcmp(signature, MADSCONCAT_SIG, sizeof (MADSCONCAT_SIG) - 1) == 0)
 		return FORMAT_MADSCONCAT;
 
 	if (size >= sizeof (madspack_sig) - 1 &&
@@ -63,20 +62,6 @@ static int split(const char *path, int header_only)
 		return EXIT_FAILURE;
 	}
 
-	struct madsconcat_header {
-		char signature[0x10];
-		uint16_t length;
-	} __attribute__ ((packed));
-
-	struct madsconcat_record {
-		uint32_t offset;
-		uint32_t size;
-		char name[0x0e];
-	} __attribute__ ((packed));
-
-	assert(sizeof (struct madsconcat_header) == 0x12);
-	assert(sizeof (struct madsconcat_record) == 0x16);
-
 	if (st.st_size < (off_t) sizeof (struct madsconcat_header)) {
 		fprintf(stderr, "%s: shorter than a MADSCONCAT header\n", path);
 		close(fd);
@@ -95,7 +80,7 @@ static int split(const char *path, int header_only)
 	const struct madsconcat_header *header =
 		(const struct madsconcat_header *) map;
 
-	if (memcmp(madsconcat_sig, header->signature, sizeof (header->signature)) != 0) {
+	if (memcmp(MADSCONCAT_SIG, header->signature, sizeof (header->signature)) != 0) {
 		fprintf(stderr, "MADSCONCAT signature mismatch.\n");
 		munmap((void *) map, size);
 		return EXIT_FAILURE;
