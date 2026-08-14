@@ -182,6 +182,19 @@ enum {
 
 const char *mads_strerror(int error);
 
+/*
+ * Record type stamps. The packer writes one per archive, into every
+ * record slot; the interpreters never read it -- member order and
+ * layout drive loading. The stamp exists for writing archives, never
+ * for dispatch on read.
+ * Values are the corpus consensus per resource class, unanimous per
+ * game.
+ */
+enum {
+	MADS_TYPE_SS = 0x04,
+	MADS_TYPE_FF = 0x07,
+};
+
 #ifdef __cplusplus
 }
 #endif

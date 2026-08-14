@@ -261,10 +261,56 @@ static int font(const struct mads_ff *ff, const char *path)
 	return 0;
 }
 
+/*
+ * Trying the binders is the identification: the archives carry no
+ * readable type, and the formats' layouts do not overlap, so at
+ * most one binds. A binder that gets past its layout checks has
+ * identified the archive, so its refusal is the archive's error, not
+ * a reason to try the next -- except the font binder, whose layout is
+ * any single member and whose glyph check fails on 157 real archives
+ * of other kinds.
+ */
+
+struct view {
+	int type;   /* the MADS_TYPE_ that bound, or 0 */
+	int error;  /* when type is 0: the code of a binder that knew the
+	               layout but refused the content, else 0 */
+	union {
+		struct mads_ss ss;
+		struct mads_ff ff;
+	};
+};
+
+/* nonzero when the binder settled the archive: it bound, or it knew
+   the layout and refused the content */
+static int settled(struct view *view, int result, int layout, int type)
+{
+	if (result == 0)
+		view->type = type;
+	else if (result != layout)
+		view->error = result;
+	else
+		return 0;
+
+	return 1;
+}
+
+static int identify(struct view *view, const struct madspack *mp)
+{
+	view->type = 0;
+	view->error = 0;
+
+	if (settled(view, mads_ss_bind(&view->ss, mp), MADS_SS_LAYOUT, MADS_TYPE_SS))
+		return view->type;
+
+	if (mads_ff_bind(&view->ff, mp) == 0)
+		view->type = MADS_TYPE_FF;
+
+	return view->type;
+}
+
 static int unpack(const char *path, int header_only)
 {
-	enum { ANYTHING = 0, PIK = 2, SS = 4, FF = 7 };
-
 	struct madspack mp;
 	int error = madspack_load(&mp, path);
 	if (error != 0) {
@@ -277,6 +323,18 @@ static int unpack(const char *path, int header_only)
 		return EXIT_FAILURE;
 	}
 
+	/* The stamp never decides: identify does. One that binds as
+	   nothing is listed only; one a binder refused is listed, then
+	   fails. */
+	struct view view;
+
+	const char *format;
+	switch (identify(&view, &mp)) {
+		case MADS_TYPE_SS: format = "sprite"; break;
+		case MADS_TYPE_FF: format = "font"; break;
+		default:           format = "unknown"; break;
+	}
+
 	/* the readable part of the signature; %s would print its SUB byte */
 	printf("signature: %.12s\n", mp.header.signature);
 	printf("length: %d\n", mp.header.length);
@@ -286,22 +344,22 @@ static int unpack(const char *path, int header_only)
 		const struct madspack_record &member = mp.header.member[i];
 
 		printf(
-			"  [%2d]: 0x%05lx %s %2x (%8x/%8x) ",
+			"  [%2d]: 0x%05zx %s %2x (%8x/%8x) %s\n",
 			i, sizeof (struct madspack_header) + offset,
 			member.codec ? "fab" : "raw",
 			member.stamp,
 			member.decoded_size,
-			member.encoded_size
+			member.encoded_size,
+			format
 		);
 
-		switch (member.stamp) {
-			case PIK: printf("pic\n"); break;
-			case SS:  printf("sprite\n"); break;
-			case FF:  printf("font\n"); break;
-			default: printf("unknown\n"); break;
-		}
-
 		offset += member.encoded_size;
+	}
+
+	if (view.error != 0) {
+		fprintf(stderr, "%s: %s\n", path, mads_strerror(view.error));
+		madspack_free(&mp);
+		return EXIT_FAILURE;
 	}
 
 	if (header_only) {
@@ -311,39 +369,22 @@ static int unpack(const char *path, int header_only)
 
 	int status = 0;
 
-	switch (mp.header.member[0].stamp) {
-		case PIK: break;
-
-		case SS: {
-			struct mads_ss ss;
-			error = mads_ss_bind(&ss, &mp);
-			if (error != 0) {
-				fprintf(stderr, "%s in <%s>\n", mads_strerror(error), path);
-				status = 1;
-			} else if (ss.palette_size != MADS_PALETTE_SIZE) {
+	switch (view.type) {
+		case MADS_TYPE_SS:
+			if (view.ss.palette_size != MADS_PALETTE_SIZE) {
 				fprintf(stderr, "%s: no full palette member\n", path);
 				status = 1;
-			} else {
-				status = sprite(&ss, path);
+				break;
 			}
+			status = sprite(&view.ss, path);
 			break;
-		}
 
-		case FF: {
-			struct mads_ff ff;
-			error = mads_ff_bind(&ff, &mp);
-			if (error != 0) {
-				fprintf(stderr, "%s in <%s>\n", mads_strerror(error), path);
-				status = 1;
-			} else {
-				status = font(&ff, path);
-			}
+		case MADS_TYPE_FF:
+			status = font(&view.ff, path);
 			break;
-		}
 
-		case ANYTHING: break;
-
-		default: break;
+		default:
+			break;
 	}
 
 	madspack_free(&mp);
