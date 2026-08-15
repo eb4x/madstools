@@ -64,11 +64,12 @@ static int load_palette(const char *path, uint8_t *palette)
 		return 1;
 	}
 
-	for (size_t i = 0; i < MADS_PALETTE_SIZE; ++i) {
-		if (palette[i] > 0x3f) {
-			fprintf(stderr, "%s: component above 0x3f\n", path);
-			return 1;
-		}
+	/* bound only for its checks: the file is the full form already */
+	struct mads_palette pal;
+	int error = mads_palette_bind(&pal, palette, MADS_PALETTE_SIZE);
+	if (error != 0) {
+		fprintf(stderr, "%s: %s\n", path, mads_strerror(error));
+		return 1;
 	}
 
 	return 0;
@@ -166,16 +167,19 @@ static int picture(const struct mads_pik *pik, const uint8_t *palette,
 	return 0;
 }
 
-/* One image per sprite. The listing is of the bound view: a packed
+/* One image per sprite, colored by the series' own palette, which
+   every series carries. The listing is of the bound view: a packed
    series shows its decoded offsets, and the member's disk size beside
    the decoded total says so. */
 static int sprite(const struct mads_ss *ss, const struct madspack *mp,
-                  const uint8_t *palette, const char *extract_dir,
-                  const char *filename)
+                  const char *extract_dir, const char *filename)
 {
 	printf("ss_header: sprite_table_length: %u, sprites_size: %u (member 3: %u on disk)\n",
 		ss->header->sprite_table_length, ss->header->sprites_size,
 		mp->header.member[3].encoded_size);
+
+	uint8_t palette[MADS_PALETTE_SIZE];
+	mads_palette_full(palette, &ss->palette);
 
 	for (uint16_t i = 0; i < ss->length; ++i) {
 		const struct mads_sprite_record &sprite = ss->sprite_table[i];
@@ -411,26 +415,23 @@ static int unpack(const char *path, const char *extract_dir,
 	const char *filename = strrchr(path, '/');
 	filename = filename != NULL ? filename + 1 : path;
 
-	/* Pictures and sprites are colored by the archive's own palette
-	   member when it is the full form, triple N coloring pixel value N.
-	   A two-member picture and a sparse series carry none and fall
-	   back to the one --palette names. */
+	/* A picture is colored by its own palette member, either form; one
+	   that carries none falls back to the --palette file. */
+	uint8_t own_palette[MADS_PALETTE_SIZE];
 	const uint8_t *palette = NULL;
 
-	if (view.type == MADS_TYPE_PIK || view.type == MADS_TYPE_SS) {
-		bool is_picture = view.type == MADS_TYPE_PIK;
-
-		uint32_t member_size = is_picture ? view.pik.palette_size
-		                                  : view.ss.palette_size;
-
-		if (member_size == MADS_PALETTE_SIZE)
-			palette = is_picture ? view.pik.palette : view.ss.palette;
-		else
+	if (view.type == MADS_TYPE_PIK) {
+		if (view.pik.palette.length != 0) {
+			mads_palette_full(own_palette, &view.pik.palette);
+			palette = own_palette;
+		} else {
 			palette = fallback_palette;
+		}
 
 		if (palette == NULL) {
-			fprintf(stderr, "%s: no full palette member; "
-				"name one with --palette\n", path);
+			fprintf(stderr, "%s: no palette member; name one with --palette "
+				"(768 bytes of six-bit RGB, e.g. Colonization's VICEROY.PAL)\n",
+				path);
 			madspack_free(&mp);
 			return 1;
 		}
@@ -444,7 +445,7 @@ static int unpack(const char *path, const char *extract_dir,
 			break;
 
 		case MADS_TYPE_SS:
-			status = sprite(&view.ss, &mp, palette, extract_dir, filename);
+			status = sprite(&view.ss, &mp, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
@@ -489,6 +490,7 @@ int main(int argc, char *argv[])
 					"      --extract DIR  write the images or the container's files into DIR\n"
 					"      --palette FILE color the archives that carry no palette\n"
 					"                     with this one, 256 six-bit RGB triples\n"
+					"                     (Colonization's VICEROY.PAL is one)\n"
 					"      --help         display this help and exit\n"
 					"      --version      display version information and exit\n"
 					"\n"

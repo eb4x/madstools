@@ -24,14 +24,16 @@ const char *mads_strerror(int error)
 		case MADS_RLE_OVERFLOW:     return "output too small for the RLE stream";
 		case MADS_RLE_CORRUPT:      return "RLE run crosses a row end";
 
+		case MADS_PALETTE_FORM:      return "palette member is neither form";
+		case MADS_PALETTE_LENGTH:    return "palette length past the member's end";
+		case MADS_PALETTE_COMPONENT: return "palette component above 0x3f";
+
 		case MADS_PIK_LAYOUT:       return "not a picture archive";
 		case MADS_PIK_HEADER:       return "pixel member contradicts the picture header";
-		case MADS_PIK_PALETTE:      return "palette member holds a component above 0x3f";
 
 		case MADS_SS_LAYOUT:        return "not a sprite series archive";
 		case MADS_SS_HEADER:        return "sprite table contradicts the series header";
 		case MADS_SS_RECORD:        return "sprite record outside the stream member";
-		case MADS_SS_PALETTE:       return "palette member holds a component above 0x3f";
 		case MADS_SS_STREAM:        return "sprite stream decodes to a length other than its record's";
 
 		case MADS_FF_LAYOUT:        return "not a font archive";

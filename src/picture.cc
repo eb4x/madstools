@@ -19,25 +19,21 @@ int mads_pik_bind(struct mads_pik *pik, const struct madspack *mp)
 	pik->pixels      = mp->decoded[1];
 	pik->pixels_size = member[1].decoded_size;
 
-	if (mp->header.length == 3) {
-		pik->palette      = mp->decoded[2];
-		pik->palette_size = member[2].decoded_size;
-	} else {
-		pik->palette      = NULL;
-		pik->palette_size = 0;
-	}
-
 	if (pik->pixels == NULL)
 		return MADS_PIK_LAYOUT;
 
 	if ((uint32_t) pik->header->width * pik->header->height != pik->pixels_size)
 		return MADS_PIK_HEADER;
 
-	/* only the full form is component triples; sparse forms differ */
-	if (pik->palette_size == MADS_PALETTE_SIZE)
-		for (size_t i = 0; i < MADS_PALETTE_SIZE; ++i)
-			if (pik->palette[i] > 0x3f)
-				return MADS_PIK_PALETTE;
+	int result;
+	if (mp->header.length == 3)
+		result = mads_palette_bind(&pik->palette, mp->decoded[2],
+		                           member[2].decoded_size);
+	else
+		result = mads_palette_bind(&pik->palette, NULL, 0);
+
+	if (result != 0)
+		return result;
 
 	return 0;
 }

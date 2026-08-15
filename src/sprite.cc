@@ -95,10 +95,7 @@ int mads_ss_bind(struct mads_ss *ss, struct madspack *mp)
 	ss->length = ss->header->sprite_table_length;
 	ss->sprite_table = (const struct mads_sprite_record *) mp->decoded[1];
 
-	ss->palette      = mp->decoded[2];
-	ss->palette_size = member[2].decoded_size;
-
-	ss->streams      = mp->decoded[3];
+	ss->streams     = mp->decoded[3];
 	ss->streams_size = member[3].decoded_size;
 
 	/* the header owns the length: the sprite table is exactly length
@@ -151,15 +148,14 @@ int mads_ss_bind(struct mads_ss *ss, struct madspack *mp)
 	if (packed && sprites_size / yield > ss->streams_size)
 		return MADS_SS_HEADER;
 
-	/* only the full form is component triples; sparse forms differ */
-	if (ss->palette_size == MADS_PALETTE_SIZE)
-		for (size_t i = 0; i < MADS_PALETTE_SIZE; ++i)
-			if (ss->palette[i] > 0x3f)
-				return MADS_SS_PALETTE;
+	int result = mads_palette_bind(&ss->palette, mp->decoded[2],
+	                               member[2].decoded_size);
+	if (result != 0)
+		return result;
 
 	/* nothing to decode: skip, so malloc(0) cannot read as MADS_NOMEM */
 	if (packed && sprites_size > 0) {
-		int result = unpack(ss, mp);
+		result = unpack(ss, mp);
 
 		if (result != 0) {
 			mp->error_member = 3;

@@ -117,6 +117,61 @@ uint32_t mads_rle_encode_bound(size_t width, size_t height);
 /* the full palette form: 256 six-bit RGB triples */
 #define MADS_PALETTE_SIZE 768
 
+/* 0xfc..0xff are RLE codes, never pixels, so a palette header has at
+   most this many reachable records; the game keeps every picture's
+   palette slots below it too, not only sprites' */
+#define MADS_PALETTE_LENGTH_MAX 252
+
+struct mads_palette_record {
+	uint8_t r, g, b;
+	uint8_t unk03[3];
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_palette_record) == 6,
+              "palette record must be 6 bytes");
+
+/* the sparse palette form */
+struct mads_palette_header {
+	uint16_t length;
+	struct mads_palette_record color[];
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_palette_header) == 2,
+              "palette header must be 2 bytes");
+
+/* A bound palette of either form: color v is r, g, b at
+   rgb[v * stride], for v below length. */
+struct mads_palette {
+	uint16_t       length;   /* 256 for the full form; 0 is none */
+	const uint8_t *rgb;
+	uint32_t       stride;   /* 3 for the full form, 6 for a header's records */
+};
+
+/* Bind the size bytes at data as a palette member of either form, or
+   none (size 0); records past a header's length are not read. The
+   binders pass on its code. */
+int mads_palette_bind(struct mads_palette *palette,
+                      const uint8_t *data, uint32_t size);
+
+/* The full form of a bound palette: triple v from color v for its
+   length, the rest black. */
+void mads_palette_full(uint8_t dst[MADS_PALETTE_SIZE],
+                       const struct mads_palette *palette);
+
+/* A six-bit VGA component in eight bits: the DAC's 0x3f is full
+   scale, so round(c * 255 / 63) -- not c << 2, which tops out at
+   252. The multiply and shift are DOSBox's rgb6_to_8 and match the
+   division over the whole six-bit range. */
+static inline uint8_t mads_rgb6_to_8(uint8_t c) {
+	return (c * 259 + 33) >> 6;
+}
+
+/* The full palette form in eight bits: every component of the
+   MADS_PALETTE_SIZE bytes at src through mads_rgb6_to_8 into dst.
+   dst may be src; a bound palette is the archive's, so expand it with
+   mads_palette_full first. */
+void mads_palette_scale(uint8_t *dst, const uint8_t *src);
+
 struct mads_pik_header {
 	uint16_t height;
 	uint16_t width;
@@ -133,8 +188,7 @@ struct mads_pik {
 	const uint8_t *pixels;
 	uint32_t       pixels_size;
 
-	const uint8_t *palette;     /* NULL when the archive has none */
-	uint32_t       palette_size;
+	struct mads_palette palette;
 };
 
 int mads_pik_bind(struct mads_pik *pik, const struct madspack *mp);
@@ -173,8 +227,7 @@ struct mads_ss {
 	uint16_t length;
 	const struct mads_sprite_record *sprite_table;  /* length records */
 
-	const uint8_t *palette;
-	uint32_t       palette_size;
+	struct mads_palette palette;
 
 	/* one RLE stream per sprite, the records' offsets indexing it --
 	   encoded bytes, not a raster; the bind makes it so for a packed
@@ -251,14 +304,18 @@ enum {
 	MADS_RLE_OVERFLOW,     /* dest too small */
 	MADS_RLE_CORRUPT,      /* a run crosses the row end */
 
+	MADS_PALETTE_FORM,      /* not the full form, and shorter than a
+	                           header */
+	MADS_PALETTE_LENGTH,    /* header length past the member's end or
+	                           MADS_PALETTE_LENGTH_MAX */
+	MADS_PALETTE_COMPONENT, /* a component above 0x3f */
+
 	MADS_PIK_LAYOUT,       /* not a picture archive */
 	MADS_PIK_HEADER,       /* pixel member contradicts the picture header */
-	MADS_PIK_PALETTE,      /* palette component above 0x3f */
 
 	MADS_SS_LAYOUT,        /* not an SS archive, or a member is missing */
 	MADS_SS_HEADER,        /* sprite table contradicts the series header */
 	MADS_SS_RECORD,        /* sprite record outside the stream member */
-	MADS_SS_PALETTE,       /* palette component above 0x3f */
 	MADS_SS_STREAM,        /* a packed sprite's stream decodes to a length
 	                          other than its record's */
 

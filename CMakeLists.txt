@@ -13,6 +13,7 @@ add_library(mads
 	src/lzss_fab.cc
 	src/madsconcat.cc
 	src/madspack.cc
+	src/palette.cc
 	src/picture.cc
 	src/rle.cc
 	src/sprite.cc

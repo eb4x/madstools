@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mads.h"
 #include "util.h"
 
 /*
@@ -11,14 +12,6 @@
  * 256 six-bit RGB triples -- the archive's own palette member, whose
  * register mapping is the identity: triple N colors pixel value N.
  */
-
-/* A six-bit VGA component in eight bits: DOSBox's rgb6_to_8. The
-   multiply and shift deliver round(c * 255 / 63) over the whole
-   six-bit range without a division. */
-static uint8_t rgb6_to_8(const uint8_t c)
-{
-	return (c * 259 + 33) >> 6;
-}
 
 int tgaify(const uint8_t *data, const size_t width, const size_t height,
            const uint8_t *palette, const char *filename)
@@ -32,15 +25,14 @@ int tgaify(const uint8_t *data, const size_t width, const size_t height,
 		return 1;
 	}
 
-	struct rgb {
+	struct tga_color_map_record {
 		uint8_t b, g, r;
-	} __attribute__ ((packed));
+	} __attribute__ ((packed)) tga_color_map[256];
 
-	struct rgb color_map[256];
 	for (int i = 0; i < 256; ++i) {
-		color_map[i].r = rgb6_to_8(palette[i * 3 + 0]);
-		color_map[i].g = rgb6_to_8(palette[i * 3 + 1]);
-		color_map[i].b = rgb6_to_8(palette[i * 3 + 2]);
+		tga_color_map[i].r = mads_rgb6_to_8(palette[i * 3 + 0]);
+		tga_color_map[i].g = mads_rgb6_to_8(palette[i * 3 + 1]);
+		tga_color_map[i].b = mads_rgb6_to_8(palette[i * 3 + 2]);
 	}
 
 	struct tga_hdr {
@@ -83,8 +75,8 @@ int tgaify(const uint8_t *data, const size_t width, const size_t height,
 		return 1;
 	}
 
-	fwrite(&tga,      sizeof (struct tga_hdr),   1, fp);
-	fwrite(color_map, sizeof (struct rgb),     256, fp);
+	fwrite(&tga,          sizeof (struct tga_hdr),                1, fp);
+	fwrite(tga_color_map, sizeof (struct tga_color_map_record), 256, fp);
 	fwrite(data, width, height, fp);
 
 	/* A write that fails while flushing a full buffer leaves fclose
