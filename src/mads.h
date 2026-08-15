@@ -94,6 +94,20 @@ uint32_t mads_fab_encode_bound(uint32_t src_size);
 /* the one pixel value the sprite RLE grammar cannot draw */
 #define MADS_RLE_TRANSPARENT 0xfd
 
+/* An 8-bit surface to draw over: h rows of pitch bytes each, the
+   leftmost w of them pixels. pitch >= w. */
+struct mads_surface {
+	size_t w, h;
+	size_t pitch;
+	uint8_t *pixels;
+};
+
+/* Draw one stream over dst at (x, y), clipped; transparent pixels
+   leave dst untouched. Validated as mads_rle_decode does, clipped or
+   not. */
+int mads_rle_draw(const struct mads_surface *dst, int x, int y,
+                  size_t width, size_t height,
+                  const uint8_t *src, uint32_t src_size);
 int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
                     const uint8_t *src, uint32_t src_size);
 int mads_rle_encode(uint8_t *dest, uint32_t *dest_size,

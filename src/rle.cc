@@ -16,16 +16,35 @@ enum {
 	                    byte stays clear of the three sentinels */
 };
 
-int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
-                    const uint8_t *src, uint32_t src_size)
+/* The run's surface intersection: columns [x, x + length) of row y.
+   The caller keeps the grammar; only the plot knows the surface. */
+static void plot_run(const struct mads_surface *dst, int x, int y,
+                     size_t length, uint8_t value)
+{
+	if (y < 0 || (size_t) y >= dst->h)
+		return;
+
+	int first = x < 0 ? 0 : x;
+	int last = x + (int) length;
+
+	if (last > (int) dst->w)
+		last = (int) dst->w;
+
+	if (first >= last)
+		return;
+
+	memset(dst->pixels + (size_t) y * dst->pitch + first,
+	       value, (size_t) (last - first));
+}
+
+int mads_rle_draw(const struct mads_surface *dst, int x, int y,
+                  size_t width, size_t height,
+                  const uint8_t *src, uint32_t src_size)
 {
 	uint32_t idx = 0;
 
-	memset(dest, MADS_RLE_TRANSPARENT, width * height);
-
-	for (size_t y = 0; y < height; ++y) {
-		uint8_t *row = dest + y * width;
-		size_t x = 0;
+	for (size_t row = 0; row < height; ++row) {
+		size_t sx = 0;
 
 		if (idx == src_size)
 			return MADS_RLE_TRUNCATED;
@@ -51,24 +70,24 @@ int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
 				uint8_t value = src[idx++];
 				if (value == MADS_RLE_TRANSPARENT) {
 					/* skips may pass the row end; draws may not */
-					x += length;
-					if (x > width)
-						x = width;
+					sx += length;
+					if (sx > width)
+						sx = width;
 					continue;
 				}
 
-				if (length > width - x)
+				if (length > width - sx)
 					return MADS_RLE_CORRUPT;
 
-				memset(row + x, value, length);
-				x += length;
+				plot_run(dst, x + (int) sx, y + (int) row, length, value);
+				sx += length;
 			}
 			continue;
 		}
 
 		/* per-pixel tokens; any other mode byte is discarded */
 		for (;;) {
-			if (x >= width) {
+			if (sx >= width) {
 				/* a full row still ends with 0xff; skip up to it */
 				do {
 					if (idx == src_size)
@@ -85,7 +104,7 @@ int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
 				break;
 
 			if (token == MADS_RLE_TRANSPARENT) {
-				++x;
+				++sx;
 				continue;
 			}
 
@@ -96,25 +115,36 @@ int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
 				uint8_t length = src[idx++];
 				uint8_t value  = src[idx++];
 				if (value == MADS_RLE_TRANSPARENT) {
-					x += length;
-					if (x > width)
-						x = width;
+					sx += length;
+					if (sx > width)
+						sx = width;
 					continue;
 				}
 
-				if (length > width - x)
+				if (length > width - sx)
 					return MADS_RLE_CORRUPT;
 
-				memset(row + x, value, length);
-				x += length;
+				plot_run(dst, x + (int) sx, y + (int) row, length, value);
+				sx += length;
 				continue;
 			}
 
-			row[x++] = token;
+			plot_run(dst, x + (int) sx, y + (int) row, 1, token);
+			++sx;
 		}
 	}
 
 	return 0;
+}
+
+int mads_rle_decode(uint8_t *dest, size_t width, size_t height,
+                    const uint8_t *src, uint32_t src_size)
+{
+	const struct mads_surface dst = { width, height, width, dest };
+
+	memset(dest, MADS_RLE_TRANSPARENT, width * height);
+
+	return mads_rle_draw(&dst, 0, 0, width, height, src, src_size);
 }
 
 static size_t run_at(const uint8_t *row, size_t x, size_t extent)
