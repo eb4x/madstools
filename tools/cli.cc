@@ -194,8 +194,13 @@ static int sprite(const struct mads_ss *ss, const uint8_t *palette,
 			return 1;
 		}
 
-		int error = mads_rle_decode(pixels, sprite.width, sprite.height,
-		                            ss->streams + sprite.offset, sprite.size);
+		/* the draw leaves transparent pixels to the backdrop */
+		memset(pixels, MADS_RLE_TRANSPARENT, pixels_size);
+
+		const struct mads_surface dst = { sprite.width, sprite.height,
+		                                  sprite.width, pixels };
+
+		int error = mads_sprite_draw(ss, i, &dst, 0, 0);
 		if (error != 0) {
 			fprintf(stderr, "%s: sprite %d: %s\n", filename, i, mads_strerror(error));
 			free(pixels);

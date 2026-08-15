@@ -178,6 +178,11 @@ struct mads_ss {
 
 int mads_ss_bind(struct mads_ss *ss, const struct madspack *mp);
 
+/* Draw one sprite of the series over dst at (x, y), via
+   mads_rle_draw. An index past the sprite table is MADS_SS_RECORD. */
+int mads_sprite_draw(const struct mads_ss *ss, uint16_t index,
+                     const struct mads_surface *dst, int x, int y);
+
 struct mads_ff_header {
 	uint8_t  cell_height;       /* every glyph is this tall */
 	uint8_t  max_width;         /* no glyph is wider */
