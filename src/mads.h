@@ -195,8 +195,8 @@ int mads_sprite_draw(const struct mads_ss *ss, uint16_t index,
 struct mads_ff_header {
 	uint8_t  cell_height;       /* every glyph is this tall */
 	uint8_t  max_width;         /* no glyph is wider */
-	uint8_t  width[128];
-	uint16_t offset[128];
+	uint8_t  width[128];        /* glyph g is code g + 1; 0 is undefined */
+	uint16_t offset[128];       /* into the member, 2-bit pixels */
 } __attribute__ ((packed));
 
 static_assert(sizeof (struct mads_ff_header) == 0x182,
@@ -209,6 +209,23 @@ struct mads_ff {
 };
 
 int mads_ff_bind(struct mads_ff *ff, const struct madspack *mp);
+
+/* Pixel width of s, spacing pixels between glyphs, none trailing;
+   an undefined glyph draws nothing and advances nothing. */
+int mads_text_width(const struct mads_ff *ff, const char *s, int spacing);
+
+/* Draw glyph g over dst at (x, y), clipped, each 2-bit pixel through
+   color; a color of 0xff is transparent. A g outside 0..127 is
+   MADS_FF_GLYPH. */
+int mads_glyph_draw(const struct mads_ff *ff, int g,
+                    const struct mads_surface *dst, int x, int y,
+                    const uint8_t color[4]);
+
+/* Draw s the same way, spacing pixels between glyphs; returns the
+   pen's final x. */
+int mads_text_draw(const struct mads_ff *ff, const char *s,
+                   const struct mads_surface *dst, int x, int y,
+                   int spacing, const uint8_t color[4]);
 
 /* Failure codes; 0 is success. */
 enum {

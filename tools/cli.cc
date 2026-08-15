@@ -243,6 +243,12 @@ static int font(const struct mads_ff *ff, const char *extract_dir,
 	}
 	memset(sheet, 0, sheet_width * sheet_height);
 
+	const struct mads_surface dst = { sheet_width, sheet_height, sheet_width, sheet };
+
+	/* every glyph pixel lands as its own 2-bit level; the palette
+	   below grays them */
+	const uint8_t level[4] = { 0, 1, 2, 3 };
+
 	for (int i = 0; i < 128; ++i) {
 
 		if (header->width[i] == 0)
@@ -262,30 +268,17 @@ static int font(const struct mads_ff *ff, const char *extract_dir,
 				header->width[i], bytes_in_width,
 				header->offset[i]);
 
-		const uint8_t *packed = ff->data + header->offset[i];
-
-		size_t cell = (i % 16) * header->max_width
-		            + (i / 16) * header->cell_height * sheet_width;
-
-		for (int height = 0; height < header->cell_height; ++height) {
-			for (int width = 0; width < header->width[i]; ++width) {
-
-				int byte = (width / 4);
-				int shift = 6 - (width % 4) * 2;
-
-				sheet[cell + width + (height * sheet_width)] =
-					((packed[(bytes_in_width * height) + byte] >> shift) & 0x03) * 85;
-			}
-		}
+		mads_glyph_draw(ff, i, &dst,
+		                (i % 16) * header->max_width,
+		                (i / 16) * header->cell_height,
+		                level);
 	}
 
-	/* The sheet holds coverage, not palette indices: a glyph pixel is
-	   two bits scaled to 0, 85, 170 or 255. A gray ramp writes it out
-	   as it stands -- i / 4 is the six-bit gray whose eight-bit
-	   expansion is i again at all four levels. */
-	uint8_t ramp[MADS_PALETTE_SIZE];
-	for (int i = 0; i < 256; ++i)
-		ramp[i * 3 + 0] = ramp[i * 3 + 1] = ramp[i * 3 + 2] = i / 4;
+	/* Four six-bit grays, 0 to 63, one per level: their eight-bit
+	   expansions are 0, 85, 170 and 255. */
+	uint8_t ramp[MADS_PALETTE_SIZE] = { 0 };
+	for (int i = 0; i < 4; ++i)
+		ramp[i * 3 + 0] = ramp[i * 3 + 1] = ramp[i * 3 + 2] = i * 21;
 
 	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
 	int error = tgaify(sheet, sheet_width, sheet_height, ramp, outpath.c_str());
