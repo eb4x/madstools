@@ -167,6 +167,113 @@ static int picture(const struct mads_pik *pik, const uint8_t *palette,
 	return 0;
 }
 
+/* The one-pixel ring just outside the width x height box at (x, y),
+   which the cell is sized to hold. */
+static void border(const struct mads_surface *dst, size_t x, size_t y,
+                   size_t width, size_t height, uint8_t color)
+{
+	uint8_t *top    = dst->pixels + (y - 1) * dst->pitch + x - 1;
+	uint8_t *bottom = dst->pixels + (y + height) * dst->pitch + x - 1;
+
+	memset(top,    color, width + 2);
+	memset(bottom, color, width + 2);
+
+	for (size_t row = y; row < y + height; ++row) {
+		dst->pixels[row * dst->pitch + x - 1]     = color;
+		dst->pixels[row * dst->pitch + x + width] = color;
+	}
+}
+
+/* Every sprite of the series in one image: a near-square grid of
+   uniform cells, each sprite ringed around its own box so its extent
+   shows inside the shared cell. */
+static int sprite_sheet(const struct mads_ss *ss,
+                        const char *extract_dir, const char *filename)
+{
+	size_t max_width = 0;
+	size_t max_height = 0;
+
+	for (uint16_t i = 0; i < ss->length; ++i) {
+		const struct mads_sprite_record &sprite = ss->sprite_table[i];
+
+		if (sprite.width > max_width)
+			max_width = sprite.width;
+		if (sprite.height > max_height)
+			max_height = sprite.height;
+	}
+
+	if (max_width == 0 || max_height == 0) {
+		fprintf(stderr, "%s: no sprite to draw\n", filename);
+		return 0;
+	}
+
+	size_t columns = 1;
+	while (columns * columns < ss->length)
+		++columns;
+	size_t rows = (ss->length + columns - 1) / columns;
+
+	size_t cell_width  = max_width + 3;   /* border and gap */
+	size_t cell_height = max_height + 3;
+
+	size_t sheet_width  = columns * cell_width;
+	size_t sheet_height = rows * cell_height;
+
+	uint8_t *sheet = (uint8_t *) malloc(sheet_width * sheet_height);
+	if (sheet == NULL) {
+		fprintf(stderr, "%s: %s\n", filename, mads_strerror(MADS_NOMEM));
+		return 1;
+	}
+
+	/* the draw leaves transparent pixels to the backdrop */
+	memset(sheet, MADS_RLE_TRANSPARENT, sheet_width * sheet_height);
+
+	const struct mads_surface dst = { sheet_width, sheet_height, sheet_width, sheet };
+
+	for (uint16_t i = 0; i < ss->length; ++i) {
+		size_t x = (i % columns) * cell_width + 1;
+		size_t y = (i / columns) * cell_height + 1;
+
+		int error = mads_sprite_draw(ss, i, &dst, x, y);
+		if (error != 0) {
+			fprintf(stderr, "%s: sprite %d: %s\n", filename, i, mads_strerror(error));
+			free(sheet);
+			return 1;
+		}
+	}
+
+	uint8_t sheet_palette[MADS_PALETTE_SIZE];
+	mads_palette_full(sheet_palette, &ss->palette);
+
+	/* past every palette's reach, so the border cannot be mistaken
+	   for pixels */
+	uint8_t border_color = MADS_PALETTE_LENGTH_MAX;
+	sheet_palette[border_color * 3 + 0] = 0x20;
+	sheet_palette[border_color * 3 + 1] = 0x20;
+	sheet_palette[border_color * 3 + 2] = 0x20;
+
+	for (uint16_t i = 0; i < ss->length; ++i) {
+		const struct mads_sprite_record &sprite = ss->sprite_table[i];
+
+		if (sprite.width == 0 || sprite.height == 0)
+			continue;
+
+		size_t x = (i % columns) * cell_width + 1;
+		size_t y = (i / columns) * cell_height + 1;
+
+		border(&dst, x, y, sprite.width, sprite.height, border_color);
+	}
+
+	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
+	int error = tgaify(sheet, sheet_width, sheet_height, sheet_palette,
+	                   MADS_RLE_TRANSPARENT, outpath.c_str());
+	free(sheet);
+
+	if (error != 0)
+		return 1;
+
+	return 0;
+}
+
 /* The listing is of the bound view: a packed series shows its decoded
    offsets, and the member's disk size beside the decoded total says so. */
 static void sprite_list(const struct mads_ss *ss, const struct madspack *mp,
@@ -357,7 +464,7 @@ static int identify(struct view *view, struct madspack *mp)
 }
 
 static int unpack(const char *path, const char *extract_dir,
-                  const uint8_t *fallback_palette)
+                  const uint8_t *fallback_palette, bool sheet)
 {
 	struct madspack mp;
 	int error = madspack_load(&mp, path);
@@ -447,6 +554,9 @@ static int unpack(const char *path, const char *extract_dir,
 		}
 	}
 
+	if (sheet && view.type != MADS_TYPE_SS)
+		fprintf(stderr, "%s: not a sprite series; --sheet ignored\n", path);
+
 	int status = 0;
 
 	switch (view.type) {
@@ -456,7 +566,9 @@ static int unpack(const char *path, const char *extract_dir,
 
 		case MADS_TYPE_SS:
 			sprite_list(&view.ss, &mp, filename);
-			status = sprite(&view.ss, extract_dir, filename);
+			status = sheet
+				? sprite_sheet(&view.ss, extract_dir, filename)
+				: sprite(&view.ss, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
@@ -477,10 +589,12 @@ int main(int argc, char *argv[])
 	const char *program = argv[0];
 	const char *extract_dir = NULL;
 	const char *palette_path = NULL;
+	bool sheet = false;
 
 	static struct option long_options[] = {
 		{ "extract", 1, 0, 'x' },
 		{ "palette", 1, 0, 'p' },
+		{ "sheet",   0, 0, 's' },
 		{ "help",    0, 0, 'h' },
 		{ "version", 0, 0, 'v' },
 		{ 0, 0, 0, 0 }
@@ -502,6 +616,8 @@ int main(int argc, char *argv[])
 					"      --palette FILE color the archives that carry no palette\n"
 					"                     with this one, 256 six-bit RGB triples\n"
 					"                     (Colonization's VICEROY.PAL is one)\n"
+					"      --sheet        write a sprite series as one image, its\n"
+					"                     sprites in a grid, instead of one image each\n"
 					"      --help         display this help and exit\n"
 					"      --version      display version information and exit\n"
 					"\n"
@@ -514,6 +630,10 @@ int main(int argc, char *argv[])
 
 			case 'p':
 				palette_path = optarg;
+				break;
+
+			case 's':
+				sheet = true;
 				break;
 
 			case 'v':
@@ -575,7 +695,8 @@ int main(int argc, char *argv[])
 
 			case FORMAT_MADSPACK:
 				if (unpack(filename, extract_dir,
-				           palette_path != NULL ? fallback_palette : NULL) != 0)
+				           palette_path != NULL ? fallback_palette : NULL,
+				           sheet) != 0)
 					++failures;
 				break;
 
