@@ -161,7 +161,7 @@ static int picture(const struct mads_pik *pik, const uint8_t *palette,
 
 	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
 	if (tgaify(pik->pixels, pik->header->width, pik->header->height,
-	           palette, outpath.c_str()) != 0)
+	           palette, -1, outpath.c_str()) != 0)
 		return 1;
 
 	return 0;
@@ -218,7 +218,7 @@ static int sprite(const struct mads_ss *ss, const struct madspack *mp,
 
 		std::string outpath = std::format("{}/{}.{:02}.tga", extract_dir, filename, i);
 		error = tgaify(pixels, sprite.width, sprite.height,
-		               palette, outpath.c_str());
+		               palette, MADS_RLE_TRANSPARENT, outpath.c_str());
 		free(pixels);
 
 		if (error != 0)
@@ -285,7 +285,7 @@ static int font(const struct mads_ff *ff, const char *extract_dir,
 		ramp[i * 3 + 0] = ramp[i * 3 + 1] = ramp[i * 3 + 2] = i * 21;
 
 	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
-	int error = tgaify(sheet, sheet_width, sheet_height, ramp, outpath.c_str());
+	int error = tgaify(sheet, sheet_width, sheet_height, ramp, -1, outpath.c_str());
 	free(sheet);
 
 	if (error != 0)

@@ -8,13 +8,14 @@
 #include "util.h"
 
 /*
- * Colormapped TGA writer. data is one byte per pixel and palette is
- * 256 six-bit RGB triples -- the archive's own palette member, whose
- * register mapping is the identity: triple N colors pixel value N.
+ * Colormapped TGA writer. data is one byte per pixel; palette is 256
+ * six-bit RGB triples, triple N coloring pixel value N. A transparent
+ * index makes the color map BGRA, that entry alone with alpha 0;
+ * without one it stays the 24-bit BGR form.
  */
 
 int tgaify(const uint8_t *data, const size_t width, const size_t height,
-           const uint8_t *palette, const char *filename)
+           const uint8_t *palette, int transparent, const char *filename)
 {
 	/* The header holds the extents in sixteen bits while the pixels
 	   below are written from the arguments, so a larger image would
@@ -25,14 +26,35 @@ int tgaify(const uint8_t *data, const size_t width, const size_t height,
 		return 1;
 	}
 
-	struct tga_color_map_record {
+	struct tga_color_map_record24 {
 		uint8_t b, g, r;
-	} __attribute__ ((packed)) tga_color_map[256];
+	} __attribute__ ((packed));
+
+	struct tga_color_map_record32 {
+		uint8_t b, g, r, a;
+	} __attribute__ ((packed));
+
+	/* One buffer sized for either layout; entry_size picks which one
+	   is in use. */
+	union {
+		struct tga_color_map_record24 rec24[256];
+		struct tga_color_map_record32 rec32[256];
+	} tga_color_map;
+
+	size_t entry_size = transparent < 0
+		? sizeof (struct tga_color_map_record24)
+		: sizeof (struct tga_color_map_record32);
 
 	for (int i = 0; i < 256; ++i) {
-		tga_color_map[i].r = mads_rgb6_to_8(palette[i * 3 + 0]);
-		tga_color_map[i].g = mads_rgb6_to_8(palette[i * 3 + 1]);
-		tga_color_map[i].b = mads_rgb6_to_8(palette[i * 3 + 2]);
+		uint8_t r = mads_rgb6_to_8(palette[i * 3 + 0]);
+		uint8_t g = mads_rgb6_to_8(palette[i * 3 + 1]);
+		uint8_t b = mads_rgb6_to_8(palette[i * 3 + 2]);
+		if (transparent < 0) {
+			tga_color_map.rec24[i] = { b, g, r };
+		} else {
+			uint8_t a = i == transparent ? 0x00 : 0xff;
+			tga_color_map.rec32[i] = { b, g, r, a };
+		}
 	}
 
 	struct tga_hdr {
@@ -60,7 +82,7 @@ int tgaify(const uint8_t *data, const size_t width, const size_t height,
 
 	tga.cms.first_entry_index = 0;
 	tga.cms.color_map_length = 256;
-	tga.cms.color_map_entry_size = 24; /* in bits */
+	tga.cms.color_map_entry_size = entry_size * 8; /* in bits */
 
 	tga.is.x_origin = 0;
 	tga.is.y_origin = 0;
@@ -75,8 +97,10 @@ int tgaify(const uint8_t *data, const size_t width, const size_t height,
 		return 1;
 	}
 
-	fwrite(&tga,          sizeof (struct tga_hdr),                1, fp);
-	fwrite(tga_color_map, sizeof (struct tga_color_map_record), 256, fp);
+	fwrite(&tga, sizeof (struct tga_hdr), 1, fp);
+
+	fwrite(&tga_color_map, entry_size, 256, fp);
+
 	fwrite(data, width, height, fp);
 
 	/* A write that fails while flushing a full buffer leaves fclose
