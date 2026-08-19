@@ -11,6 +11,7 @@
 
 #include <format>
 #include <string>
+#include <vector>
 
 #include "mads.h"
 #include "util/util.h"
@@ -154,6 +155,86 @@ static int split(const char *path, const char *extract_dir)
 	return 0;
 }
 
+/* One --overlay: the sprite series it named, kept loaded for the run
+   since the view aliases the archive. */
+struct overlay {
+	const char *path;
+	const char *filename;   /* path's last component, set once loaded */
+	struct madspack mp;
+	struct mads_ss ss;
+};
+
+static void sprite_list(const struct mads_ss *ss, const struct madspack *mp,
+                        const char *filename);
+
+/* The picture under every overlay, each sprite at its authored
+   position, one image per frame: as many frames as the longest series
+   has sprites, a shorter one starting over when it runs out. Colored
+   by the picture's palette. */
+static int composite(const struct mads_pik *pik, const uint8_t *palette,
+                     const struct overlay overlays[], size_t overlay_length,
+                     const char *extract_dir, const char *filename)
+{
+	size_t width  = pik->header->width;
+	size_t height = pik->header->height;
+
+	printf("picture: %zux%zu\n", width, height);
+
+	size_t frames = 0;
+	for (size_t i = 0; i < overlay_length; ++i) {
+		sprite_list(&overlays[i].ss, &overlays[i].mp, overlays[i].filename);
+
+		if (overlays[i].ss.length > frames)
+			frames = overlays[i].ss.length;
+	}
+
+	if (frames == 0) {
+		fprintf(stderr, "%s: no sprite to draw\n", filename);
+		return 0;
+	}
+
+	uint8_t *canvas = (uint8_t *) malloc(width * height);
+	if (canvas == NULL) {
+		fprintf(stderr, "%s: %s\n", filename, mads_strerror(MADS_NOMEM));
+		return 1;
+	}
+
+	const struct mads_surface dst = { width, height, width, canvas };
+
+	for (size_t frame = 0; frame < frames; ++frame) {
+		memcpy(canvas, pik->pixels, width * height);
+
+		for (size_t i = 0; i < overlay_length; ++i) {
+			const struct mads_ss &ss = overlays[i].ss;
+
+			if (ss.length == 0)
+				continue;
+
+			uint16_t j = frame % ss.length;
+			const struct mads_sprite_record &sprite = ss.sprite_table[j];
+
+			int error = mads_sprite_draw(&ss, j, &dst,
+			                             sprite.x - sprite.width / 2,
+			                             sprite.y - sprite.height + 1);
+			if (error != 0) {
+				fprintf(stderr, "%s: sprite %d: %s\n", overlays[i].path, j,
+					mads_strerror(error));
+				free(canvas);
+				return 1;
+			}
+		}
+
+		std::string outpath = std::format("{}/{}.{:02}.tga", extract_dir, filename, frame);
+		if (tgaify(canvas, width, height, palette, -1, outpath.c_str()) != 0) {
+			free(canvas);
+			return 1;
+		}
+	}
+
+	free(canvas);
+	return 0;
+}
+
 static int picture(const struct mads_pik *pik, const uint8_t *palette,
                    const char *extract_dir, const char *filename)
 {
@@ -288,9 +369,9 @@ static void sprite_list(const struct mads_ss *ss, const struct madspack *mp,
 
 		size_t pixels_size = (size_t) sprite.width * sprite.height;
 
-		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d\n", filename, i,
-			sprite.offset, sprite.size, pixels_size,
-			sprite.width,  sprite.height);
+		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d at (%d,%d)\n",
+			filename, i, sprite.offset, sprite.size, pixels_size,
+			sprite.width, sprite.height, sprite.x, sprite.y);
 	}
 }
 
@@ -464,7 +545,8 @@ static int identify(struct view *view, struct madspack *mp)
 }
 
 static int unpack(const char *path, const char *extract_dir,
-                  const uint8_t *fallback_palette, bool sheet)
+                  const uint8_t *fallback_palette, bool sheet,
+                  const struct overlay overlays[], size_t overlay_length)
 {
 	struct madspack mp;
 	int error = madspack_load(&mp, path);
@@ -557,11 +639,18 @@ static int unpack(const char *path, const char *extract_dir,
 	if (sheet && view.type != MADS_TYPE_SS)
 		fprintf(stderr, "%s: not a sprite series; --sheet ignored\n", path);
 
+	if (overlay_length > 0 && view.type != MADS_TYPE_PIK)
+		fprintf(stderr, "%s: not a picture; --overlay ignored\n", path);
+
 	int status = 0;
 
 	switch (view.type) {
 		case MADS_TYPE_PIK:
-			status = picture(&view.pik, palette, extract_dir, filename);
+			if (overlay_length > 0)
+				status = composite(&view.pik, palette, overlays, overlay_length,
+				                   extract_dir, filename);
+			else
+				status = picture(&view.pik, palette, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_SS:
@@ -590,11 +679,13 @@ int main(int argc, char *argv[])
 	const char *extract_dir = NULL;
 	const char *palette_path = NULL;
 	bool sheet = false;
+	std::vector<struct overlay> overlays;
 
 	static struct option long_options[] = {
 		{ "extract", 1, 0, 'x' },
 		{ "palette", 1, 0, 'p' },
 		{ "sheet",   0, 0, 's' },
+		{ "overlay", 1, 0, 'o' },
 		{ "help",    0, 0, 'h' },
 		{ "version", 0, 0, 'v' },
 		{ 0, 0, 0, 0 }
@@ -618,6 +709,10 @@ int main(int argc, char *argv[])
 					"                     (Colonization's VICEROY.PAL is one)\n"
 					"      --sheet        write a sprite series as one image, its\n"
 					"                     sprites in a grid, instead of one image each\n"
+					"      --overlay FILE write a picture as one image per animation\n"
+					"                     frame, this sprite series drawn over it at its\n"
+					"                     authored position; may repeat, later series\n"
+					"                     on top, a shorter one starting over\n"
 					"      --help         display this help and exit\n"
 					"      --version      display version information and exit\n"
 					"\n"
@@ -634,6 +729,10 @@ int main(int argc, char *argv[])
 
 			case 's':
 				sheet = true;
+				break;
+
+			case 'o':
+				overlays.push_back({ optarg, NULL, {}, {} });
 				break;
 
 			case 'v':
@@ -682,6 +781,41 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* Loaded past the returns above, which would leak an archive. The
+	   series' own palettes go unused: the picture's is the screen's. */
+	bool loaded = true;
+
+	for (struct overlay &overlay : overlays) {
+		int error = madspack_load(&overlay.mp, overlay.path);
+		if (error != 0) {
+			if (overlay.mp.error_member < 0)
+				fprintf(stderr, "%s: %s\n", overlay.path, mads_strerror(error));
+			else
+				fprintf(stderr, "%s: member %d: %s\n", overlay.path,
+					overlay.mp.error_member, mads_strerror(error));
+			loaded = false;
+			break;
+		}
+
+		error = mads_ss_bind(&overlay.ss, &overlay.mp);
+		if (error != 0) {
+			fprintf(stderr, "%s: %s\n", overlay.path, mads_strerror(error));
+			loaded = false;
+			break;
+		}
+
+		overlay.filename = strrchr(overlay.path, '/');
+		overlay.filename = overlay.filename != NULL
+		                 ? overlay.filename + 1 : overlay.path;
+	}
+
+	if (!loaded) {
+		/* never loaded or failed, an mp holds NULL in every slot */
+		for (struct overlay &overlay : overlays)
+			madspack_free(&overlay.mp);
+		return EXIT_FAILURE;
+	}
+
 	/* One bad file fails the run without stopping the rest. */
 	int failures = 0;
 	for (int i = optind; i < argc; ++i) {
@@ -696,7 +830,7 @@ int main(int argc, char *argv[])
 			case FORMAT_MADSPACK:
 				if (unpack(filename, extract_dir,
 				           palette_path != NULL ? fallback_palette : NULL,
-				           sheet) != 0)
+				           sheet, overlays.data(), overlays.size()) != 0)
 					++failures;
 				break;
 
@@ -710,6 +844,9 @@ int main(int argc, char *argv[])
 				break;
 		}
 	}
+
+	for (struct overlay &overlay : overlays)
+		madspack_free(&overlay.mp);
 
 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

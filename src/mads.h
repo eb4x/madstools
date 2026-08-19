@@ -212,8 +212,9 @@ struct mads_sprite_record {
 	                     the disk offset is the FAB stream's; once bound,
 	                     it is the decoded stream's */
 	uint32_t size;    /* of the RLE stream, decoded */
-	uint16_t unk08;
-	uint16_t unk0a;
+	int16_t  x, y;    /* the frame's authored screen position, as its
+	                     bottom-centre: drawn at (x - width / 2,
+	                     y - height + 1) */
 	uint16_t width;
 	uint16_t height;
 } __attribute__ ((packed));
