@@ -16,6 +16,10 @@
 #include "mads.h"
 #include "util/util.h"
 
+#ifndef MADS_VERSION   /* the build sets it; a bare compile still links */
+#define MADS_VERSION "unknown"
+#endif
+
 enum format { FORMAT_MADSCONCAT, FORMAT_MADSPACK, FORMAT_UNKNOWN,
               FORMAT_UNREADABLE };
 
@@ -737,7 +741,7 @@ int main(int argc, char *argv[])
 
 			case 'v':
 				printf(
-					"mads - MADS archive inspection and extraction tool\n"
+					"mads " MADS_VERSION " - MADS archive inspection and extraction tool\n"
 					"Copyright (C) 2008 - 2026 Erik Berg\n"
 					"License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n"
 					"This is free software: you are free to change and redistribute it.\n"

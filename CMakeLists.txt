@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(madstools LANGUAGES CXX)
+project(madstools VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,3 +32,4 @@ add_executable(mads-cli
 set_target_properties(mads-cli PROPERTIES OUTPUT_NAME mads)
 target_link_libraries(mads-cli PRIVATE mads)
 target_compile_options(mads-cli PRIVATE -Wall -Wextra)
+target_compile_definitions(mads-cli PRIVATE MADS_VERSION="${PROJECT_VERSION}")
