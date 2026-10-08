@@ -48,6 +48,32 @@ static enum format sniff(const char *path)
 	return FORMAT_UNKNOWN;
 }
 
+static int load_palette(const char *path, uint8_t *palette)
+{
+	FILE *fp = fopen(path, "rb");
+	if (fp == NULL) {
+		fprintf(stderr, "%s: cannot open: %s\n", path, strerror(errno));
+		return 1;
+	}
+
+	size_t size = fread(palette, 1, MADS_PALETTE_SIZE, fp);
+	fclose(fp);
+
+	if (size != MADS_PALETTE_SIZE) {
+		fprintf(stderr, "%s: shorter than a full palette\n", path);
+		return 1;
+	}
+
+	for (size_t i = 0; i < MADS_PALETTE_SIZE; ++i) {
+		if (palette[i] > 0x3f) {
+			fprintf(stderr, "%s: component above 0x3f\n", path);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static int split(const char *path, const char *extract_dir)
 {
 	int fd = open(path, O_RDONLY);
@@ -127,21 +153,21 @@ static int split(const char *path, const char *extract_dir)
 	return EXIT_SUCCESS;
 }
 
-static int picture(const struct mads_pik *pik, const char *extract_dir,
-                   const char *filename)
+static int picture(const struct mads_pik *pik, const uint8_t *palette,
+                   const char *extract_dir, const char *filename)
 {
 	printf("picture: %ux%u\n", pik->header->width, pik->header->height);
 
 	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
 	if (tgaify(pik->pixels, pik->header->width, pik->header->height,
-	           pik->palette, outpath.c_str()) != 0)
+	           palette, outpath.c_str()) != 0)
 		return 1;
 
 	return 0;
 }
 
-static int sprite(const struct mads_ss *ss, const char *extract_dir,
-                  const char *filename)
+static int sprite(const struct mads_ss *ss, const uint8_t *palette,
+                  const char *extract_dir, const char *filename)
 {
 	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
 		ss->header->sprite_table_length, ss->header->sprites_size);
@@ -178,7 +204,7 @@ static int sprite(const struct mads_ss *ss, const char *extract_dir,
 
 		std::string outpath = std::format("{}/{}.{:02}.tga", extract_dir, filename, i);
 		error = tgaify(pixels, sprite.width, sprite.height,
-		               ss->palette, outpath.c_str());
+		               palette, outpath.c_str());
 		free(pixels);
 
 		if (error != 0)
@@ -313,7 +339,8 @@ static int identify(struct view *view, const struct madspack *mp)
 	return view->type;
 }
 
-static int unpack(const char *path, const char *extract_dir)
+static int unpack(const char *path, const char *extract_dir,
+                  const uint8_t *fallback_palette)
 {
 	struct madspack mp;
 	int error = madspack_load(&mp, path);
@@ -377,25 +404,40 @@ static int unpack(const char *path, const char *extract_dir)
 	const char *filename = strrchr(path, '/');
 	filename = filename != NULL ? filename + 1 : path;
 
+	/* Pictures and sprites are colored by the archive's own palette
+	   member when it is the full form, triple N coloring pixel value N.
+	   A two-member picture and a sparse series carry none and fall
+	   back to the one --palette names. */
+	const uint8_t *palette = NULL;
+
+	if (view.type == MADS_TYPE_PIK || view.type == MADS_TYPE_SS) {
+		bool is_picture = view.type == MADS_TYPE_PIK;
+
+		uint32_t member_size = is_picture ? view.pik.palette_size
+		                                  : view.ss.palette_size;
+
+		if (member_size == MADS_PALETTE_SIZE)
+			palette = is_picture ? view.pik.palette : view.ss.palette;
+		else
+			palette = fallback_palette;
+
+		if (palette == NULL) {
+			fprintf(stderr, "%s: no full palette member; "
+				"name one with --palette\n", path);
+			madspack_free(&mp);
+			return EXIT_FAILURE;
+		}
+	}
+
 	int status = 0;
 
 	switch (view.type) {
 		case MADS_TYPE_PIK:
-			if (view.pik.palette_size != MADS_PALETTE_SIZE) {
-				fprintf(stderr, "%s: no full palette member\n", path);
-				status = 1;
-				break;
-			}
-			status = picture(&view.pik, extract_dir, filename);
+			status = picture(&view.pik, palette, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_SS:
-			if (view.ss.palette_size != MADS_PALETTE_SIZE) {
-				fprintf(stderr, "%s: no full palette member\n", path);
-				status = 1;
-				break;
-			}
-			status = sprite(&view.ss, extract_dir, filename);
+			status = sprite(&view.ss, palette, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
@@ -415,9 +457,11 @@ int main(int argc, char *argv[])
 {
 	const char *program = argv[0];
 	const char *extract_dir = NULL;
+	const char *palette_path = NULL;
 
 	static struct option long_options[] = {
 		{ "extract", 1, 0, 'x' },
+		{ "palette", 1, 0, 'p' },
 		{ "help",    0, 0, 'h' },
 		{ "version", 0, 0, 'v' },
 		{ 0, 0, 0, 0 }
@@ -436,6 +480,8 @@ int main(int argc, char *argv[])
 					"\n"
 					"Options:\n"
 					"      --extract DIR  write the images or the container's files into DIR\n"
+					"      --palette FILE color the archives that carry no palette\n"
+					"                     with this one, 256 six-bit RGB triples\n"
 					"      --help         display this help and exit\n"
 					"      --version      display version information and exit\n"
 					"\n"
@@ -444,6 +490,10 @@ int main(int argc, char *argv[])
 
 			case 'x':
 				extract_dir = optarg;
+				break;
+
+			case 'p':
+				palette_path = optarg;
 				break;
 
 			case 'v':
@@ -465,6 +515,13 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "%s: no file given\n", program);
 		fprintf(stderr, "Try '%s --help' for more information.\n", program);
 		return EXIT_FAILURE;
+	}
+
+	uint8_t fallback_palette[MADS_PALETTE_SIZE];
+
+	if (palette_path != NULL) {
+		if (load_palette(palette_path, fallback_palette) != 0)
+			return EXIT_FAILURE;
 	}
 
 	if (extract_dir != NULL) {
@@ -493,7 +550,8 @@ int main(int argc, char *argv[])
 		case FORMAT_MADSCONCAT:
 			return split(filename, extract_dir);
 		case FORMAT_MADSPACK:
-			return unpack(filename, extract_dir);
+			return unpack(filename, extract_dir,
+				palette_path != NULL ? fallback_palette : NULL);
 		case FORMAT_UNKNOWN:
 			fprintf(stderr, "%s: unrecognized signature\n", filename);
 			return EXIT_FAILURE;
