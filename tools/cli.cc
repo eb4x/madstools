@@ -142,6 +142,18 @@ static int split(const char *path, int header_only)
 	return EXIT_SUCCESS;
 }
 
+static int picture(const struct mads_pik *pik, const char *path)
+{
+	printf("picture: %ux%u\n", pik->header->width, pik->header->height);
+
+	std::string filename = std::format("{}.tga", path);
+	if (tgaify(pik->pixels, pik->header->width, pik->header->height,
+	           pik->palette, filename.c_str()) != 0)
+		return 1;
+
+	return 0;
+}
+
 static int sprite(const struct mads_ss *ss, const char *path)
 {
 	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
@@ -276,6 +288,7 @@ struct view {
 	int error;  /* when type is 0: the code of a binder that knew the
 	               layout but refused the content, else 0 */
 	union {
+		struct mads_pik pik;
 		struct mads_ss ss;
 		struct mads_ff ff;
 	};
@@ -299,6 +312,9 @@ static int identify(struct view *view, const struct madspack *mp)
 {
 	view->type = 0;
 	view->error = 0;
+
+	if (settled(view, mads_pik_bind(&view->pik, mp), MADS_PIK_LAYOUT, MADS_TYPE_PIK))
+		return view->type;
 
 	if (settled(view, mads_ss_bind(&view->ss, mp), MADS_SS_LAYOUT, MADS_TYPE_SS))
 		return view->type;
@@ -330,9 +346,10 @@ static int unpack(const char *path, int header_only)
 
 	const char *format;
 	switch (identify(&view, &mp)) {
-		case MADS_TYPE_SS: format = "sprite"; break;
-		case MADS_TYPE_FF: format = "font"; break;
-		default:           format = "unknown"; break;
+		case MADS_TYPE_PIK: format = "picture"; break;
+		case MADS_TYPE_SS:  format = "sprite"; break;
+		case MADS_TYPE_FF:  format = "font"; break;
+		default:            format = "unknown"; break;
 	}
 
 	/* the readable part of the signature; %s would print its SUB byte */
@@ -370,6 +387,15 @@ static int unpack(const char *path, int header_only)
 	int status = 0;
 
 	switch (view.type) {
+		case MADS_TYPE_PIK:
+			if (view.pik.palette_size != MADS_PALETTE_SIZE) {
+				fprintf(stderr, "%s: no full palette member\n", path);
+				status = 1;
+				break;
+			}
+			status = picture(&view.pik, path);
+			break;
+
 		case MADS_TYPE_SS:
 			if (view.ss.palette_size != MADS_PALETTE_SIZE) {
 				fprintf(stderr, "%s: no full palette member\n", path);

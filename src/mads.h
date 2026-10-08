@@ -93,6 +93,28 @@ uint32_t mads_rle_encode_bound(size_t width, size_t height);
 /* the full palette form: 256 six-bit RGB triples */
 #define MADS_PALETTE_SIZE 768
 
+struct mads_pik_header {
+	uint16_t height;
+	uint16_t width;
+	uint16_t unk04;
+	uint16_t unk06;
+} __attribute__ ((packed));
+
+static_assert(sizeof (struct mads_pik_header) == 8,
+              "PIK picture header must be 8 bytes");
+
+struct mads_pik {
+	const struct mads_pik_header *header;
+
+	const uint8_t *pixels;
+	uint32_t       pixels_size;
+
+	const uint8_t *palette;     /* NULL when the archive has none */
+	uint32_t       palette_size;
+};
+
+int mads_pik_bind(struct mads_pik *pik, const struct madspack *mp);
+
 struct mads_ss_header {
 	uint8_t  unk00[0x26];
 	uint16_t sprite_table_length;
@@ -169,6 +191,10 @@ enum {
 	MADS_RLE_OVERFLOW,     /* dest too small */
 	MADS_RLE_CORRUPT,      /* a run crosses the row end */
 
+	MADS_PIK_LAYOUT,       /* not a picture archive */
+	MADS_PIK_HEADER,       /* pixel member contradicts the picture header */
+	MADS_PIK_PALETTE,      /* palette component above 0x3f */
+
 	MADS_SS_LAYOUT,        /* not an SS archive, or a member is missing */
 	MADS_SS_HEADER,        /* sprite table contradicts the series header */
 	MADS_SS_RECORD,        /* sprite record outside the stream member */
@@ -188,11 +214,14 @@ const char *mads_strerror(int error);
  * layout drive loading. The stamp exists for writing archives, never
  * for dispatch on read.
  * Values are the corpus consensus per resource class, unanimous per
- * game.
+ * game -- except the picture stamp, which rests on three files and
+ * 2009's reading; most pictures carry arbitrary batch-correlated
+ * values instead.
  */
 enum {
-	MADS_TYPE_SS = 0x04,
-	MADS_TYPE_FF = 0x07,
+	MADS_TYPE_PIK = 0x02,
+	MADS_TYPE_SS  = 0x04,
+	MADS_TYPE_FF  = 0x07,
 };
 
 #ifdef __cplusplus

@@ -12,6 +12,7 @@ add_library(mads
 	src/font.cc
 	src/lzss_fab.cc
 	src/madspack.cc
+	src/picture.cc
 	src/rle.cc
 	src/sprite.cc
 	src/strerror.cc
