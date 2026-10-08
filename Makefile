@@ -1,7 +1,7 @@
 # Thin wrapper around the CMake build. All real build logic lives in
 # CMakeLists.txt.
 #   make          configure (if needed) and build
-#   make clean    remove build artifacts and stray *.tga
+#   make clean    remove build artifacts
 #   make distclean remove the entire build directory
 
 BUILD_DIR ?= build
@@ -16,7 +16,6 @@ build: $(BUILD_DIR)/CMakeCache.txt
 
 clean:
 	@[ -d $(BUILD_DIR) ] && cmake --build $(BUILD_DIR) --target clean || true
-	rm -f *.tga
 
 distclean:
 	rm -rf $(BUILD_DIR)

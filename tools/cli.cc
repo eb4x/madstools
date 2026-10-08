@@ -48,7 +48,7 @@ static enum format sniff(const char *path)
 	return FORMAT_UNKNOWN;
 }
 
-static int split(const char *path, int header_only)
+static int split(const char *path, const char *extract_dir)
 {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -93,12 +93,14 @@ static int split(const char *path, int header_only)
 
 		printf("%s[%3d]: offset(%06x), size(%06x) - [%s]\n", path, i, file.offset, file.size, file.name);
 
-		if (header_only)
+		if (extract_dir == NULL)
 			continue;
 
-		FILE *out = fopen(file.name, "wb");
+		std::string outpath = std::format("{}/{}", extract_dir, file.name);
+
+		FILE *out = fopen(outpath.c_str(), "wb");
 		if (out == NULL) {
-			fprintf(stderr, "%s: cannot write: %s\n", file.name, strerror(errno));
+			fprintf(stderr, "%s: cannot write: %s\n", outpath.c_str(), strerror(errno));
 			munmap((void *) map, size);
 			return EXIT_FAILURE;
 		}
@@ -114,7 +116,7 @@ static int split(const char *path, int header_only)
 			failed = 1;
 
 		if (failed) {
-			fprintf(stderr, "%s: cannot write: %s\n", file.name, strerror(errno));
+			fprintf(stderr, "%s: cannot write: %s\n", outpath.c_str(), strerror(errno));
 			munmap((void *) map, size);
 			return EXIT_FAILURE;
 		}
@@ -125,19 +127,21 @@ static int split(const char *path, int header_only)
 	return EXIT_SUCCESS;
 }
 
-static int picture(const struct mads_pik *pik, const char *path)
+static int picture(const struct mads_pik *pik, const char *extract_dir,
+                   const char *filename)
 {
 	printf("picture: %ux%u\n", pik->header->width, pik->header->height);
 
-	std::string filename = std::format("{}.tga", path);
+	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
 	if (tgaify(pik->pixels, pik->header->width, pik->header->height,
-	           pik->palette, filename.c_str()) != 0)
+	           pik->palette, outpath.c_str()) != 0)
 		return 1;
 
 	return 0;
 }
 
-static int sprite(const struct mads_ss *ss, const char *path)
+static int sprite(const struct mads_ss *ss, const char *extract_dir,
+                  const char *filename)
 {
 	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
 		ss->header->sprite_table_length, ss->header->sprites_size);
@@ -147,7 +151,7 @@ static int sprite(const struct mads_ss *ss, const char *path)
 
 		size_t pixels_size = (size_t) sprite.width * sprite.height;
 
-		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d\n", path, i,
+		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d\n", filename, i,
 			sprite.offset, sprite.size, pixels_size,
 			sprite.width,  sprite.height);
 
@@ -159,7 +163,7 @@ static int sprite(const struct mads_ss *ss, const char *path)
 
 		uint8_t *pixels = (uint8_t *) malloc(pixels_size);
 		if (pixels == NULL) {
-			fprintf(stderr, "%s: sprite %d: %s\n", path, i,
+			fprintf(stderr, "%s: sprite %d: %s\n", filename, i,
 				mads_strerror(MADS_NOMEM));
 			return 1;
 		}
@@ -167,14 +171,14 @@ static int sprite(const struct mads_ss *ss, const char *path)
 		int error = mads_rle_decode(pixels, sprite.width, sprite.height,
 		                            ss->streams + sprite.offset, sprite.size);
 		if (error != 0) {
-			fprintf(stderr, "%s: sprite %d: %s\n", path, i, mads_strerror(error));
+			fprintf(stderr, "%s: sprite %d: %s\n", filename, i, mads_strerror(error));
 			free(pixels);
 			return 1;
 		}
 
-		std::string filename = std::format("{}.{:02}.tga", path, i);
+		std::string outpath = std::format("{}/{}.{:02}.tga", extract_dir, filename, i);
 		error = tgaify(pixels, sprite.width, sprite.height,
-		               ss->palette, filename.c_str());
+		               ss->palette, outpath.c_str());
 		free(pixels);
 
 		if (error != 0)
@@ -184,7 +188,8 @@ static int sprite(const struct mads_ss *ss, const char *path)
 	return 0;
 }
 
-static int font(const struct mads_ff *ff, const char *path)
+static int font(const struct mads_ff *ff, const char *extract_dir,
+                const char *filename)
 {
 	const struct mads_ff_header *header = ff->header;
 
@@ -197,7 +202,7 @@ static int font(const struct mads_ff *ff, const char *path)
 
 	uint8_t *sheet = (uint8_t *) malloc(sheet_width * sheet_height);
 	if (sheet == NULL) {
-		fprintf(stderr, "%s: %s\n", path, mads_strerror(MADS_NOMEM));
+		fprintf(stderr, "%s: %s\n", filename, mads_strerror(MADS_NOMEM));
 		return 1;
 	}
 	memset(sheet, 0, sheet_width * sheet_height);
@@ -246,8 +251,8 @@ static int font(const struct mads_ff *ff, const char *path)
 	for (int i = 0; i < 256; ++i)
 		ramp[i * 3 + 0] = ramp[i * 3 + 1] = ramp[i * 3 + 2] = i / 4;
 
-	std::string filename = std::format("{}.tga", path);
-	int error = tgaify(sheet, sheet_width, sheet_height, ramp, filename.c_str());
+	std::string outpath = std::format("{}/{}.tga", extract_dir, filename);
+	int error = tgaify(sheet, sheet_width, sheet_height, ramp, outpath.c_str());
 	free(sheet);
 
 	if (error != 0)
@@ -308,7 +313,7 @@ static int identify(struct view *view, const struct madspack *mp)
 	return view->type;
 }
 
-static int unpack(const char *path, int header_only)
+static int unpack(const char *path, const char *extract_dir)
 {
 	struct madspack mp;
 	int error = madspack_load(&mp, path);
@@ -362,10 +367,15 @@ static int unpack(const char *path, int header_only)
 		return EXIT_FAILURE;
 	}
 
-	if (header_only) {
+	if (extract_dir == NULL) {
 		madspack_free(&mp);
 		return EXIT_SUCCESS;
 	}
+
+	/* The images are named after the input, but land in the extract
+	   directory rather than beside it. */
+	const char *filename = strrchr(path, '/');
+	filename = filename != NULL ? filename + 1 : path;
 
 	int status = 0;
 
@@ -376,7 +386,7 @@ static int unpack(const char *path, int header_only)
 				status = 1;
 				break;
 			}
-			status = picture(&view.pik, path);
+			status = picture(&view.pik, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_SS:
@@ -385,11 +395,11 @@ static int unpack(const char *path, int header_only)
 				status = 1;
 				break;
 			}
-			status = sprite(&view.ss, path);
+			status = sprite(&view.ss, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
-			status = font(&view.ff, path);
+			status = font(&view.ff, extract_dir, filename);
 			break;
 
 		default:
@@ -404,32 +414,36 @@ static int unpack(const char *path, int header_only)
 int main(int argc, char *argv[])
 {
 	const char *program = argv[0];
-	int header_only = 0;
+	const char *extract_dir = NULL;
 
 	static struct option long_options[] = {
+		{ "extract", 1, 0, 'x' },
 		{ "help",    0, 0, 'h' },
-		{ "header",  0, 0, 'i' },
 		{ "version", 0, 0, 'v' },
 		{ 0, 0, 0, 0 }
 	};
 
 	int c;
-	while ((c = getopt_long(argc, argv, "hiv", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
 		switch (c) {
 			case 'h':
 				printf(
 					"Usage: %s [options] <FILE>\n"
 					"MADS archive inspection and extraction tool\n"
 					"\n"
+					"The file's signature picks the handler. The file is listed\n"
+					"only: writing anything requires --extract DIR.\n"
+					"\n"
 					"Options:\n"
-					"      --help     display this help and exit\n"
-					"      --version  display version information and exit\n"
+					"      --extract DIR  write the images or the container's files into DIR\n"
+					"      --help         display this help and exit\n"
+					"      --version      display version information and exit\n"
 					"\n"
 					"Report bugs to <madstools@slipsprogrammor.no>.\n", program);
 				return EXIT_SUCCESS;
 
-			case 'i':
-				header_only = 1;
+			case 'x':
+				extract_dir = optarg;
 				break;
 
 			case 'v':
@@ -453,15 +467,33 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	if (extract_dir != NULL) {
+		if (mkdir(extract_dir, 0777) != 0 && errno != EEXIST) {
+			fprintf(stderr, "%s: cannot create: %s\n", extract_dir, strerror(errno));
+			return EXIT_FAILURE;
+		}
+
+		/* EEXIST alone does not make it a directory */
+		struct stat st;
+		if (stat(extract_dir, &st) != 0) {
+			fprintf(stderr, "%s: cannot stat: %s\n", extract_dir, strerror(errno));
+			return EXIT_FAILURE;
+		}
+		if (!S_ISDIR(st.st_mode)) {
+			fprintf(stderr, "%s: not a directory\n", extract_dir);
+			return EXIT_FAILURE;
+		}
+	}
+
 	const char *filename = argv[optind];
 
 	int fmt = sniff(filename);
 
 	switch(fmt) {
 		case FORMAT_MADSCONCAT:
-			return split(filename, header_only);
+			return split(filename, extract_dir);
 		case FORMAT_MADSPACK:
-			return unpack(filename, header_only);
+			return unpack(filename, extract_dir);
 		case FORMAT_UNKNOWN:
 			fprintf(stderr, "%s: unrecognized signature\n", filename);
 			return EXIT_FAILURE;
