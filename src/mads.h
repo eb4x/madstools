@@ -140,7 +140,11 @@ struct mads_pik {
 int mads_pik_bind(struct mads_pik *pik, const struct madspack *mp);
 
 struct mads_ss_header {
-	uint8_t  unk00[0x26];
+	uint8_t  packed;  /* nonzero: every stream in member 3 is encoded on
+	                     its own with codec, and size is the decoded
+	                     length. mads_ss_bind decodes them and clears it */
+	uint8_t  codec;   /* as madspack_record.codec; 1 in every series seen */
+	uint8_t  unk02[0x24];
 	uint16_t sprite_table_length;
 	uint8_t  unk28[0x6c];
 	uint32_t sprites_size;
@@ -150,8 +154,10 @@ static_assert(sizeof (struct mads_ss_header) == 0x98,
               "SS series header must be 0x98 bytes");
 
 struct mads_sprite_record {
-	uint32_t offset;
-	uint32_t size;
+	uint32_t offset;  /* into the stream member. In a packed series
+	                     the disk offset is the FAB stream's; once bound,
+	                     it is the decoded stream's */
+	uint32_t size;    /* of the RLE stream, decoded */
 	uint16_t unk08;
 	uint16_t unk0a;
 	uint16_t width;
@@ -171,12 +177,15 @@ struct mads_ss {
 	uint32_t       palette_size;
 
 	/* one RLE stream per sprite, the records' offsets indexing it --
-	   encoded bytes, not a raster */
+	   encoded bytes, not a raster; the bind makes it so for a packed
+	   series too */
 	const uint8_t *streams;
 	uint32_t       streams_size;
 };
 
-int mads_ss_bind(struct mads_ss *ss, const struct madspack *mp);
+/* Not const: the first bind of a packed series decodes it into the
+   archive. Bind once per archive, never per frame. */
+int mads_ss_bind(struct mads_ss *ss, struct madspack *mp);
 
 /* Draw one sprite of the series over dst at (x, y), via
    mads_rle_draw. An index past the sprite table is MADS_SS_RECORD. */
@@ -233,6 +242,8 @@ enum {
 	MADS_SS_HEADER,        /* sprite table contradicts the series header */
 	MADS_SS_RECORD,        /* sprite record outside the stream member */
 	MADS_SS_PALETTE,       /* palette component above 0x3f */
+	MADS_SS_STREAM,        /* a packed sprite's stream decodes to a length
+	                          other than its record's */
 
 	MADS_FF_LAYOUT,        /* not a font archive */
 	MADS_FF_GLYPH,         /* glyph wider than its cell, or outside the member */

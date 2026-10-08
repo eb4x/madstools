@@ -166,11 +166,16 @@ static int picture(const struct mads_pik *pik, const uint8_t *palette,
 	return 0;
 }
 
-static int sprite(const struct mads_ss *ss, const uint8_t *palette,
-                  const char *extract_dir, const char *filename)
+/* One image per sprite. The listing is of the bound view: a packed
+   series shows its decoded offsets, and the member's disk size beside
+   the decoded total says so. */
+static int sprite(const struct mads_ss *ss, const struct madspack *mp,
+                  const uint8_t *palette, const char *extract_dir,
+                  const char *filename)
 {
-	printf("ss_header: sprite_table_length: %u, sprites_size: %u\n",
-		ss->header->sprite_table_length, ss->header->sprites_size);
+	printf("ss_header: sprite_table_length: %u, sprites_size: %u (member 3: %u on disk)\n",
+		ss->header->sprite_table_length, ss->header->sprites_size,
+		mp->header.member[3].encoded_size);
 
 	for (uint16_t i = 0; i < ss->length; ++i) {
 		const struct mads_sprite_record &sprite = ss->sprite_table[i];
@@ -327,7 +332,7 @@ static int settled(struct view *view, int result, int layout, int type)
 	return 1;
 }
 
-static int identify(struct view *view, const struct madspack *mp)
+static int identify(struct view *view, struct madspack *mp)
 {
 	view->type = 0;
 	view->error = 0;
@@ -394,7 +399,11 @@ static int unpack(const char *path, const char *extract_dir,
 	}
 
 	if (view.error != 0) {
-		fprintf(stderr, "%s: %s\n", path, mads_strerror(view.error));
+		if (mp.error_member < 0)
+			fprintf(stderr, "%s: %s\n", path, mads_strerror(view.error));
+		else
+			fprintf(stderr, "%s: member %d: %s\n",
+				path, mp.error_member, mads_strerror(view.error));
 		madspack_free(&mp);
 		return 1;
 	}
@@ -442,7 +451,7 @@ static int unpack(const char *path, const char *extract_dir,
 			break;
 
 		case MADS_TYPE_SS:
-			status = sprite(&view.ss, palette, extract_dir, filename);
+			status = sprite(&view.ss, &mp, palette, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
