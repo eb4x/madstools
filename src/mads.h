@@ -73,7 +73,7 @@ int madspack_load(struct madspack *mp, const char *path);
 void madspack_free(struct madspack *mp);
 
 /*
- * FAB stream codec (src/lzss_fab.cc). Arguments follow zlib: the
+ * FAB stream codec (src/lzss_fab.c). Arguments follow zlib: the
  * destination comes first, dest_size carries the capacity of dest in
  * and the delivered size out. Both return 0 or a MADS_ code, leave
  * dest_size untouched on failure, and never read or write outside
