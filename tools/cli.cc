@@ -167,19 +167,14 @@ static int picture(const struct mads_pik *pik, const uint8_t *palette,
 	return 0;
 }
 
-/* One image per sprite, colored by the series' own palette, which
-   every series carries. The listing is of the bound view: a packed
-   series shows its decoded offsets, and the member's disk size beside
-   the decoded total says so. */
-static int sprite(const struct mads_ss *ss, const struct madspack *mp,
-                  const char *extract_dir, const char *filename)
+/* The listing is of the bound view: a packed series shows its decoded
+   offsets, and the member's disk size beside the decoded total says so. */
+static void sprite_list(const struct mads_ss *ss, const struct madspack *mp,
+                        const char *filename)
 {
 	printf("ss_header: sprite_table_length: %u, sprites_size: %u (member 3: %u on disk)\n",
 		ss->header->sprite_table_length, ss->header->sprites_size,
 		mp->header.member[3].encoded_size);
-
-	uint8_t palette[MADS_PALETTE_SIZE];
-	mads_palette_full(palette, &ss->palette);
 
 	for (uint16_t i = 0; i < ss->length; ++i) {
 		const struct mads_sprite_record &sprite = ss->sprite_table[i];
@@ -189,6 +184,21 @@ static int sprite(const struct mads_ss *ss, const struct madspack *mp,
 		printf("%s/sprite[%2d]: offset: 0x%04x, size: 0x%04x:%04zx, %3dx%3d\n", filename, i,
 			sprite.offset, sprite.size, pixels_size,
 			sprite.width,  sprite.height);
+	}
+}
+
+/* One image per sprite, colored by the series' own palette, which
+   every series carries. */
+static int sprite(const struct mads_ss *ss,
+                  const char *extract_dir, const char *filename)
+{
+	uint8_t palette[MADS_PALETTE_SIZE];
+	mads_palette_full(palette, &ss->palette);
+
+	for (uint16_t i = 0; i < ss->length; ++i) {
+		const struct mads_sprite_record &sprite = ss->sprite_table[i];
+
+		size_t pixels_size = (size_t) sprite.width * sprite.height;
 
 		/* a zero-area sprite is a placeholder; nothing to decode,
 		   and malloc(0) may return the NULL the error path reads
@@ -445,7 +455,8 @@ static int unpack(const char *path, const char *extract_dir,
 			break;
 
 		case MADS_TYPE_SS:
-			status = sprite(&view.ss, &mp, extract_dir, filename);
+			sprite_list(&view.ss, &mp, filename);
+			status = sprite(&view.ss, extract_dir, filename);
 			break;
 
 		case MADS_TYPE_FF:
